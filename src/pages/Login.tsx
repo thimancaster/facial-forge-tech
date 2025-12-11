@@ -1,28 +1,74 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
+import { z } from "zod";
+
+const authSchema = z.object({
+  email: z.string().email("Email inválido").max(255),
+  password: z.string().min(6, "Senha deve ter no mínimo 6 caracteres").max(100),
+  fullName: z.string().max(100).optional(),
+});
 
 const Login = () => {
   const navigate = useNavigate();
+  const { signIn, signUp, user, loading: authLoading } = useAuth();
+  const [mode, setMode] = useState<"login" | "signup">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [fullName, setFullName] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [errors, setErrors] = useState<{ email?: string; password?: string; fullName?: string }>({});
+
+  useEffect(() => {
+    if (!authLoading && user) {
+      navigate('/dashboard');
+    }
+  }, [user, authLoading, navigate]);
+
+  const validate = () => {
+    try {
+      authSchema.parse({ email, password, fullName: mode === "signup" ? fullName : undefined });
+      setErrors({});
+      return true;
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        const newErrors: typeof errors = {};
+        err.errors.forEach((e) => {
+          if (e.path[0]) newErrors[e.path[0] as keyof typeof errors] = e.message;
+        });
+        setErrors(newErrors);
+      }
+      return false;
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!validate()) return;
+    
     setIsLoading(true);
     
-    // Simular loading de 2 segundos
-    setTimeout(() => {
-      localStorage.setItem("neuroaesthetics_logged", "true");
-      localStorage.setItem("neuroaesthetics_user", JSON.stringify({ name: "João Silva", email }));
-      navigate("/dashboard");
-    }, 2000);
+    if (mode === "login") {
+      await signIn(email, password);
+    } else {
+      await signUp(email, password, fullName);
+    }
+    
+    setIsLoading(false);
   };
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex">
@@ -42,16 +88,12 @@ const Login = () => {
         
         {/* Conteúdo */}
         <div className="relative z-10 flex flex-col justify-center items-center p-12 text-white">
-          {/* Logo/Ícone Anatômico */}
           <div className="mb-8">
             <svg className="w-48 h-48 opacity-90" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
-              {/* Face Outline */}
               <ellipse cx="100" cy="100" rx="70" ry="90" stroke="currentColor" strokeWidth="2" fill="none"/>
-              {/* Linhas de Anatomia */}
               <path d="M60 70 Q100 60 140 70" stroke="hsl(var(--accent))" strokeWidth="2" fill="none"/>
               <path d="M70 85 Q100 80 130 85" stroke="hsl(var(--accent))" strokeWidth="1.5" fill="none"/>
               <path d="M80 100 Q100 95 120 100" stroke="hsl(var(--accent))" strokeWidth="1" fill="none"/>
-              {/* Pontos de Aplicação */}
               <circle cx="75" cy="75" r="4" fill="hsl(var(--accent))"/>
               <circle cx="125" cy="75" r="4" fill="hsl(var(--accent))"/>
               <circle cx="100" cy="65" r="4" fill="hsl(var(--accent))"/>
@@ -67,7 +109,6 @@ const Login = () => {
             Plataforma de análise facial baseada em evidências para profissionais que buscam excelência em harmonização.
           </p>
           
-          {/* Badges */}
           <div className="mt-12 flex gap-6">
             <div className="text-center">
               <div className="text-3xl font-light text-accent">98%</div>
@@ -86,7 +127,6 @@ const Login = () => {
           </div>
         </div>
         
-        {/* Efeito de Luz */}
         <div className="absolute -bottom-20 -right-20 w-80 h-80 bg-accent/20 rounded-full blur-3xl"/>
         <div className="absolute -top-10 -left-10 w-60 h-60 bg-white/5 rounded-full blur-2xl"/>
       </div>
@@ -94,23 +134,37 @@ const Login = () => {
       {/* Lado Direito - Formulário */}
       <div className="w-full lg:w-1/2 flex items-center justify-center p-8 bg-background">
         <div className="w-full max-w-md">
-          {/* Logo Mobile */}
           <div className="lg:hidden mb-8 text-center">
             <h1 className="text-2xl font-light text-primary">NeuroAesthetics</h1>
           </div>
           
-          {/* Header */}
           <div className="mb-8">
             <h1 className="text-2xl font-light text-foreground mb-2">
-              Portal do Médico
+              {mode === "login" ? "Portal do Médico" : "Criar Conta"}
             </h1>
             <p className="text-muted-foreground text-sm">
-              Acesse sua conta para continuar
+              {mode === "login" ? "Acesse sua conta para continuar" : "Preencha os dados para se cadastrar"}
             </p>
           </div>
 
-          {/* Formulário */}
-          <form onSubmit={handleSubmit} className="space-y-6">
+          <form onSubmit={handleSubmit} className="space-y-5">
+            {mode === "signup" && (
+              <div className="space-y-2">
+                <Label htmlFor="fullName" className="text-sm font-medium">
+                  Nome Completo
+                </Label>
+                <Input
+                  id="fullName"
+                  type="text"
+                  placeholder="Dr. João Silva"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  className="h-12 bg-muted/30 border-border/50 focus:border-primary"
+                />
+                {errors.fullName && <p className="text-xs text-destructive">{errors.fullName}</p>}
+              </div>
+            )}
+
             <div className="space-y-2">
               <Label htmlFor="email" className="text-sm font-medium">
                 E-mail
@@ -124,6 +178,7 @@ const Login = () => {
                 required
                 className="h-12 bg-muted/30 border-border/50 focus:border-primary"
               />
+              {errors.email && <p className="text-xs text-destructive">{errors.email}</p>}
             </div>
 
             <div className="space-y-2">
@@ -131,12 +186,11 @@ const Login = () => {
                 <Label htmlFor="password" className="text-sm font-medium">
                   Senha
                 </Label>
-                <button
-                  type="button"
-                  className="text-xs text-primary hover:underline"
-                >
-                  Esqueci minha senha
-                </button>
+                {mode === "login" && (
+                  <button type="button" className="text-xs text-primary hover:underline">
+                    Esqueci minha senha
+                  </button>
+                )}
               </div>
               <div className="relative">
                 <Input
@@ -156,6 +210,7 @@ const Login = () => {
                   {showPassword ? <EyeOff className="w-4 h-4"/> : <Eye className="w-4 h-4"/>}
                 </button>
               </div>
+              {errors.password && <p className="text-xs text-destructive">{errors.password}</p>}
             </div>
 
             <Button
@@ -166,32 +221,32 @@ const Login = () => {
               {isLoading ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin"/>
-                  Entrando...
+                  {mode === "login" ? "Entrando..." : "Criando conta..."}
                 </>
               ) : (
-                "Entrar"
+                mode === "login" ? "Entrar" : "Criar Conta"
               )}
             </Button>
           </form>
 
-          {/* Divider */}
           <div className="my-8 flex items-center gap-4">
             <div className="flex-1 h-px bg-border"/>
             <span className="text-xs text-muted-foreground">ou</span>
             <div className="flex-1 h-px bg-border"/>
           </div>
 
-          {/* Criar Conta */}
           <div className="text-center">
             <p className="text-sm text-muted-foreground">
-              Ainda não tem conta?{" "}
-              <button className="text-primary hover:underline font-medium">
-                Solicitar acesso
+              {mode === "login" ? "Ainda não tem conta?" : "Já tem uma conta?"}{" "}
+              <button 
+                onClick={() => setMode(mode === "login" ? "signup" : "login")}
+                className="text-primary hover:underline font-medium"
+              >
+                {mode === "login" ? "Criar conta" : "Fazer login"}
               </button>
             </p>
           </div>
 
-          {/* Footer */}
           <div className="mt-12 text-center">
             <p className="text-xs text-muted-foreground">
               Ao entrar, você concorda com nossos{" "}

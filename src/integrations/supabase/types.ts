@@ -14,7 +14,119 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      analyses: {
+        Row: {
+          corrugator_dosage: number | null
+          created_at: string
+          frontal_photo_url: string | null
+          glabellar_photo_url: string | null
+          id: string
+          notes: string | null
+          patient_id: string
+          procerus_dosage: number | null
+          resting_photo_url: string | null
+          status: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          corrugator_dosage?: number | null
+          created_at?: string
+          frontal_photo_url?: string | null
+          glabellar_photo_url?: string | null
+          id?: string
+          notes?: string | null
+          patient_id: string
+          procerus_dosage?: number | null
+          resting_photo_url?: string | null
+          status?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          corrugator_dosage?: number | null
+          created_at?: string
+          frontal_photo_url?: string | null
+          glabellar_photo_url?: string | null
+          id?: string
+          notes?: string | null
+          patient_id?: string
+          procerus_dosage?: number | null
+          resting_photo_url?: string | null
+          status?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "analyses_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      patients: {
+        Row: {
+          age: number | null
+          created_at: string
+          id: string
+          name: string
+          observations: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          age?: number | null
+          created_at?: string
+          id?: string
+          name: string
+          observations?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          age?: number | null
+          created_at?: string
+          id?: string
+          name?: string
+          observations?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          clinic_name: string | null
+          created_at: string
+          full_name: string | null
+          id: string
+          specialty: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          clinic_name?: string | null
+          created_at?: string
+          full_name?: string | null
+          id?: string
+          specialty?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          clinic_name?: string | null
+          created_at?: string
+          full_name?: string | null
+          id?: string
+          specialty?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

@@ -4,9 +4,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Upload, ArrowLeft, ArrowRight, Check, User, Camera, Crosshair, Loader2 } from "lucide-react";
+import { Upload, ArrowLeft, ArrowRight, Check, User, Camera, Crosshair, Loader2, FolderOpen, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { CameraCapture } from "./CameraCapture";
 
 interface PatientData {
   name: string;
@@ -25,9 +26,12 @@ interface DosageData {
   corrugator: number;
 }
 
+type PhotoType = keyof PhotoData;
+
 export function NewAnalysisWizard() {
   const [step, setStep] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
+  const [cameraOpen, setCameraOpen] = useState<PhotoType | null>(null);
   const { toast } = useToast();
   
   const [patientData, setPatientData] = useState<PatientData>({
@@ -47,11 +51,23 @@ export function NewAnalysisWizard() {
     corrugator: 10,
   });
 
-  const handlePhotoUpload = (type: keyof PhotoData) => (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoUpload = (type: PhotoType) => (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       setPhotos(prev => ({ ...prev, [type]: file }));
     }
+  };
+
+  const handleCameraCapture = (type: PhotoType) => (file: File) => {
+    setPhotos(prev => ({ ...prev, [type]: file }));
+  };
+
+  const removePhoto = (type: PhotoType) => {
+    setPhotos(prev => ({ ...prev, [type]: null }));
+  };
+
+  const getPhotoPreview = (file: File): string => {
+    return URL.createObjectURL(file);
   };
 
   const handleSaveAnalysis = async () => {
@@ -203,31 +219,65 @@ export function NewAnalysisWizard() {
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
               {[
-                { key: "resting" as const, label: "Face em Repouso", desc: "Expressão neutra" },
-                { key: "glabellar" as const, label: "Contração Glabelar", desc: "Expressão 'Bravo'" },
-                { key: "frontal" as const, label: "Contração Frontal", desc: "Expressão 'Surpresa'" },
+                { key: "resting" as PhotoType, label: "Face em Repouso", desc: "Expressão neutra" },
+                { key: "glabellar" as PhotoType, label: "Contração Glabelar", desc: "Expressão 'Bravo'" },
+                { key: "frontal" as PhotoType, label: "Contração Frontal", desc: "Expressão 'Surpresa'" },
               ].map((photo) => (
-                <div key={photo.key} className="space-y-2">
+                <div key={photo.key} className="space-y-3">
                   <Label>{photo.label}</Label>
-                  <label className="flex flex-col items-center justify-center h-40 border-2 border-dashed border-border/50 rounded-lg cursor-pointer hover:border-primary/50 hover:bg-muted/30 transition-all">
+                  
+                  {/* Photo Preview */}
+                  <div className="relative h-40 border-2 border-dashed border-border/50 rounded-lg overflow-hidden bg-muted/20">
                     {photos[photo.key] ? (
-                      <div className="text-center">
-                        <Check className="w-8 h-8 text-green-500 mx-auto mb-2" />
-                        <p className="text-sm text-muted-foreground">{photos[photo.key]?.name}</p>
-                      </div>
+                      <>
+                        <img
+                          src={getPhotoPreview(photos[photo.key]!)}
+                          alt={photo.label}
+                          className="w-full h-full object-cover"
+                        />
+                        <Button
+                          variant="destructive"
+                          size="icon"
+                          className="absolute top-2 right-2 w-7 h-7"
+                          onClick={() => removePhoto(photo.key)}
+                        >
+                          <X className="w-4 h-4" />
+                        </Button>
+                      </>
                     ) : (
-                      <div className="text-center">
-                        <Upload className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+                      <div className="flex flex-col items-center justify-center h-full text-center p-4">
+                        <Upload className="w-8 h-8 text-muted-foreground mb-2" />
                         <p className="text-sm text-muted-foreground">{photo.desc}</p>
                       </div>
                     )}
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={handlePhotoUpload(photo.key)}
-                    />
-                  </label>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1"
+                      onClick={() => setCameraOpen(photo.key)}
+                    >
+                      <Camera className="w-4 h-4 mr-2" />
+                      Tirar Foto
+                    </Button>
+                    <label className="flex-1">
+                      <Button variant="outline" size="sm" className="w-full" asChild>
+                        <span>
+                          <FolderOpen className="w-4 h-4 mr-2" />
+                          Arquivo
+                        </span>
+                      </Button>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={handlePhotoUpload(photo.key)}
+                      />
+                    </label>
+                  </div>
                 </div>
               ))}
             </div>
@@ -243,6 +293,22 @@ export function NewAnalysisWizard() {
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {/* Camera Capture Modal */}
+      {cameraOpen && (
+        <CameraCapture
+          isOpen={!!cameraOpen}
+          onClose={() => setCameraOpen(null)}
+          onCapture={handleCameraCapture(cameraOpen)}
+          photoLabel={
+            cameraOpen === "resting" 
+              ? "Face em Repouso" 
+              : cameraOpen === "glabellar" 
+                ? "Contração Glabelar" 
+                : "Contração Frontal"
+          }
+        />
       )}
 
       {/* Step 3: Analysis & Dosage */}

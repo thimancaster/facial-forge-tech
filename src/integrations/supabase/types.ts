@@ -16,6 +16,9 @@ export type Database = {
     Tables: {
       analyses: {
         Row: {
+          ai_clinical_notes: string | null
+          ai_confidence: number | null
+          ai_injection_points: Json | null
           corrugator_dosage: number | null
           created_at: string
           frontal_photo_url: string | null
@@ -30,6 +33,9 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          ai_clinical_notes?: string | null
+          ai_confidence?: number | null
+          ai_injection_points?: Json | null
           corrugator_dosage?: number | null
           created_at?: string
           frontal_photo_url?: string | null
@@ -44,6 +50,9 @@ export type Database = {
           user_id: string
         }
         Update: {
+          ai_clinical_notes?: string | null
+          ai_confidence?: number | null
+          ai_injection_points?: Json | null
           corrugator_dosage?: number | null
           created_at?: string
           frontal_photo_url?: string | null

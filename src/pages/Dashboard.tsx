@@ -8,9 +8,10 @@ import { PatientsList } from "@/components/PatientsList";
 import { AnalysesGallery } from "@/components/AnalysesGallery";
 import { ProfileSettings } from "@/components/ProfileSettings";
 import { RecentAnalyses } from "@/components/RecentAnalyses";
+import { BeforeAfterComparison } from "@/components/BeforeAfterComparison";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-import { Loader2, PlusCircle, Users } from "lucide-react";
+import { Loader2, PlusCircle, Users, TrendingUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -99,6 +100,14 @@ function DashboardHome() {
             >
               <Users className="w-4 h-4 mr-3" />
               Ver Pacientes Cadastrados
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full justify-start"
+              onClick={() => navigate("/dashboard/comparison")}
+            >
+              <TrendingUp className="w-4 h-4 mr-3" />
+              Comparativo Antes/Depois
             </Button>
           </CardContent>
         </Card>
@@ -210,6 +219,15 @@ function SettingsPage() {
   );
 }
 
+function ComparisonPage() {
+  return (
+    <div className="space-y-6">
+      <h1 className="text-2xl font-light text-foreground">Comparativo de Evolução</h1>
+      <BeforeAfterComparison />
+    </div>
+  );
+}
+
 function NewAnalysisPage() {
   return (
     <div className="space-y-6">
@@ -256,6 +274,7 @@ const Dashboard = () => {
               <Route path="patients" element={<PatientsPage />} />
               <Route path="new-analysis" element={<NewAnalysisPage />} />
               <Route path="protocols" element={<ProtocolsPage />} />
+              <Route path="comparison" element={<ComparisonPage />} />
               <Route path="settings" element={<SettingsPage />} />
             </Routes>
           </div>

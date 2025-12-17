@@ -1,15 +1,17 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
-import { Upload, ArrowLeft, ArrowRight, Check, User, Camera, Crosshair, Loader2, FolderOpen, X, Sparkles, Brain, Eye, Tag } from "lucide-react";
+import { Upload, ArrowLeft, ArrowRight, Check, User, Camera, Crosshair, Loader2, FolderOpen, X, Sparkles, Brain, Eye, Tag, FileDown } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { CameraCapture, PhotoType } from "./CameraCapture";
 import { Face3DViewer, InjectionPoint } from "./Face3DViewer";
+import { DosageSafetyAlert } from "./DosageSafetyAlert";
+import { exportAnalysisPdf } from "@/lib/exportPdf";
 
 interface PatientData {
   name: string;
@@ -218,6 +220,14 @@ export function NewAnalysisWizard() {
     const corrugatorTotal = updatedPoints
       .filter(p => p.muscle.startsWith("corrugator"))
       .reduce((sum, p) => sum + p.dosage, 0);
+
+    const frontalisTotal = updatedPoints
+      .filter(p => p.muscle === "frontalis")
+      .reduce((sum, p) => sum + p.dosage, 0);
+
+    const orbicularisTotal = updatedPoints
+      .filter(p => p.muscle.startsWith("orbicularis_oculi"))
+      .reduce((sum, p) => sum + p.dosage, 0);
     
     setAiAnalysis({
       ...aiAnalysis,
@@ -225,9 +235,66 @@ export function NewAnalysisWizard() {
       totalDosage: {
         procerus: procerusTotal,
         corrugator: corrugatorTotal,
-        total: procerusTotal + corrugatorTotal
+        frontalis: frontalisTotal,
+        orbicularis_oculi: orbicularisTotal,
+        total: procerusTotal + corrugatorTotal + frontalisTotal + orbicularisTotal
       }
     });
+  };
+
+  // Calcular dosagens por músculo para alertas de segurança
+  const dosagesByMuscle = useMemo(() => {
+    if (!aiAnalysis) return {};
+    
+    return aiAnalysis.injectionPoints.reduce((acc, point) => {
+      acc[point.muscle] = (acc[point.muscle] || 0) + point.dosage;
+      return acc;
+    }, {} as Record<string, number>);
+  }, [aiAnalysis]);
+
+  // Exportar PDF
+  const handleExportPdf = async () => {
+    if (!aiAnalysis) return;
+    
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      let doctorName = "";
+      let clinicName = "";
+      
+      if (user) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("full_name, clinic_name")
+          .eq("user_id", user.id)
+          .single();
+        
+        if (profile) {
+          doctorName = profile.full_name || "";
+          clinicName = profile.clinic_name || "";
+        }
+      }
+
+      await exportAnalysisPdf({
+        patient: patientData,
+        injectionPoints: aiAnalysis.injectionPoints,
+        totalDosage: aiAnalysis.totalDosage,
+        clinicalNotes: aiAnalysis.clinicalNotes,
+        confidence: aiAnalysis.confidence,
+        doctorName,
+        clinicName,
+      });
+
+      toast({
+        title: "PDF exportado!",
+        description: "O arquivo foi salvo na pasta de downloads.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Erro ao exportar",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
   };
 
   const handleSaveAnalysis = async () => {
@@ -711,25 +778,37 @@ export function NewAnalysisWizard() {
             </div>
           </div>
 
+          {/* Alertas de Segurança */}
+          <DosageSafetyAlert 
+            dosagesByMuscle={dosagesByMuscle} 
+            totalDosage={aiAnalysis.totalDosage.total} 
+          />
+
           {/* Actions */}
           <div className="flex justify-between pt-4 border-t border-border/50">
             <Button variant="outline" onClick={() => setStep(2)}>
               <ArrowLeft className="w-4 h-4 mr-2" />
               Voltar
             </Button>
-            <Button onClick={handleSaveAnalysis} disabled={isLoading} size="lg" className="bg-gradient-to-r from-primary to-accent hover:opacity-90">
-              {isLoading ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Salvando...
-                </>
-              ) : (
-                <>
-                  <Check className="w-4 h-4 mr-2" />
-                  Salvar Análise
-                </>
-              )}
-            </Button>
+            <div className="flex gap-3">
+              <Button variant="outline" onClick={handleExportPdf}>
+                <FileDown className="w-4 h-4 mr-2" />
+                Exportar PDF
+              </Button>
+              <Button onClick={handleSaveAnalysis} disabled={isLoading} size="lg" className="bg-gradient-to-r from-primary to-accent hover:opacity-90">
+                {isLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Salvando...
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-4 h-4 mr-2" />
+                    Salvar Análise
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
         </div>
       )}

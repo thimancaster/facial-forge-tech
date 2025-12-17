@@ -4,7 +4,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Upload, ArrowLeft, ArrowRight, Check, User, Camera, Crosshair, Loader2, FolderOpen, X, Sparkles, Brain } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Upload, ArrowLeft, ArrowRight, Check, User, Camera, Crosshair, Loader2, FolderOpen, X, Sparkles, Brain, Eye, Tag } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { CameraCapture, PhotoType } from "./CameraCapture";
@@ -27,6 +28,9 @@ interface AIAnalysis {
   totalDosage: {
     procerus: number;
     corrugator: number;
+    frontalis?: number;
+    orbicularis_oculi?: number;
+    other?: number;
     total: number;
   };
   clinicalNotes: string;
@@ -54,6 +58,8 @@ export function NewAnalysisWizard() {
   
   const [aiAnalysis, setAiAnalysis] = useState<AIAnalysis | null>(null);
   const [selectedPoint, setSelectedPoint] = useState<InjectionPoint | null>(null);
+  const [showMuscles, setShowMuscles] = useState(true);
+  const [showLabels, setShowLabels] = useState(true);
   
   // Temporary photo URLs for preview and AI analysis
   const [photoUrls, setPhotoUrls] = useState<{
@@ -505,141 +511,213 @@ export function NewAnalysisWizard() {
       {step === 3 && aiAnalysis && (
         <div className="space-y-6">
           {/* AI Analysis Header */}
-          <Card className="border-primary/20 bg-primary/5">
+          <Card className="border-primary/20 bg-gradient-to-r from-primary/5 to-accent/5">
             <CardContent className="py-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
-                    <Brain className="w-5 h-5 text-primary" />
+                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center shadow-lg">
+                    <Brain className="w-6 h-6 text-white" />
                   </div>
                   <div>
-                    <h3 className="font-semibold text-foreground">Análise de IA Concluída</h3>
+                    <h3 className="font-semibold text-foreground text-lg">Análise de IA Concluída</h3>
                     <p className="text-sm text-muted-foreground">
                       {aiAnalysis.injectionPoints.length} pontos identificados • 
-                      Confiança: {Math.round(aiAnalysis.confidence * 100)}%
+                      Confiança: <span className="font-medium text-primary">{Math.round(aiAnalysis.confidence * 100)}%</span>
                     </p>
                   </div>
                 </div>
                 <div className="text-right">
-                  <p className="text-2xl font-bold text-primary">{aiAnalysis.totalDosage.total}U</p>
-                  <p className="text-xs text-muted-foreground">Total recomendado</p>
+                  <p className="text-3xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">{aiAnalysis.totalDosage.total}U</p>
+                  <p className="text-xs text-muted-foreground">Dosagem total recomendada</p>
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* 3D Face Viewer */}
-            <Card className="border-border/50 overflow-hidden">
+          <div className="grid grid-cols-1 xl:grid-cols-5 gap-6">
+            {/* 3D Face Viewer - Larger */}
+            <Card className="xl:col-span-3 border-border/50 overflow-hidden">
               <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-3 text-base">
-                  <Crosshair className="w-5 h-5 text-primary" />
-                  Visualização 3D
-                </CardTitle>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center gap-3 text-base">
+                    <Crosshair className="w-5 h-5 text-primary" />
+                    Modelo Anatômico 3D
+                  </CardTitle>
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        id="show-muscles"
+                        checked={showMuscles}
+                        onCheckedChange={setShowMuscles}
+                      />
+                      <Label htmlFor="show-muscles" className="text-xs flex items-center gap-1 cursor-pointer">
+                        <Eye className="w-3.5 h-3.5" />
+                        Músculos
+                      </Label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        id="show-labels"
+                        checked={showLabels}
+                        onCheckedChange={setShowLabels}
+                      />
+                      <Label htmlFor="show-labels" className="text-xs flex items-center gap-1 cursor-pointer">
+                        <Tag className="w-3.5 h-3.5" />
+                        Legendas
+                      </Label>
+                    </div>
+                  </div>
+                </div>
               </CardHeader>
               <CardContent className="p-2">
-                <div className="h-[400px] relative">
+                <div className="h-[500px] relative">
                   <Face3DViewer
                     injectionPoints={aiAnalysis.injectionPoints}
                     onPointClick={setSelectedPoint}
+                    showMuscles={showMuscles}
+                    showLabels={showLabels}
                   />
                 </div>
               </CardContent>
             </Card>
 
             {/* Dosage Controls & Details */}
-            <div className="space-y-4">
+            <div className="xl:col-span-2 space-y-4">
               {/* Clinical Notes */}
               <Card className="border-border/50">
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-base">Observações Clínicas</CardTitle>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Brain className="w-4 h-4 text-primary" />
+                    Observações Clínicas
+                  </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <p className="text-sm text-muted-foreground">{aiAnalysis.clinicalNotes}</p>
-                </CardContent>
-              </Card>
-
-              {/* Injection Points List */}
-              <Card className="border-border/50">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base">Pontos de Aplicação</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {aiAnalysis.injectionPoints.map((point) => (
-                    <div 
-                      key={point.id}
-                      className={`p-3 rounded-lg border transition-all cursor-pointer ${
-                        selectedPoint?.id === point.id 
-                          ? 'border-primary bg-primary/5' 
-                          : 'border-border/50 hover:border-border'
-                      }`}
-                      onClick={() => setSelectedPoint(point)}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div 
-                            className="w-3 h-3 rounded-full" 
-                            style={{ 
-                              backgroundColor: point.muscle === 'procerus' ? '#F59E0B' : '#8B5CF6' 
-                            }}
-                          />
-                          <div>
-                            <p className="text-sm font-medium capitalize">
-                              {point.muscle.replace('_', ' ')}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              {point.depth === 'deep' ? 'Profundo' : 'Superficial'}
-                              {point.notes && ` • ${point.notes}`}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Input
-                            type="number"
-                            value={point.dosage}
-                            onChange={(e) => handlePointDosageChange(point.id, parseInt(e.target.value) || 0)}
-                            className="w-16 h-8 text-center text-sm"
-                            min={0}
-                            max={30}
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                          <span className="text-xs text-muted-foreground">U</span>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                  <p className="text-sm text-muted-foreground leading-relaxed">{aiAnalysis.clinicalNotes}</p>
                 </CardContent>
               </Card>
 
               {/* Dosage Summary */}
-              <Card className="border-border/50 bg-muted/30">
-                <CardContent className="py-4">
-                  <div className="grid grid-cols-3 gap-4 text-center">
-                    <div>
-                      <p className="text-lg font-bold text-primary">{aiAnalysis.totalDosage.procerus}U</p>
-                      <p className="text-xs text-muted-foreground">Procerus</p>
+              <Card className="border-primary/20 bg-gradient-to-br from-primary/5 to-transparent">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">Resumo de Dosagem</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="p-3 rounded-lg bg-background/50 border border-border/50 text-center">
+                      <p className="text-xl font-bold text-amber-500">{aiAnalysis.totalDosage.procerus}U</p>
+                      <p className="text-xs text-muted-foreground">Prócero</p>
                     </div>
-                    <div>
-                      <p className="text-lg font-bold text-accent">{aiAnalysis.totalDosage.corrugator}U</p>
+                    <div className="p-3 rounded-lg bg-background/50 border border-border/50 text-center">
+                      <p className="text-xl font-bold text-violet-500">{aiAnalysis.totalDosage.corrugator}U</p>
                       <p className="text-xs text-muted-foreground">Corrugadores</p>
                     </div>
-                    <div>
-                      <p className="text-lg font-bold text-foreground">{aiAnalysis.totalDosage.total}U</p>
-                      <p className="text-xs text-muted-foreground">Total</p>
-                    </div>
+                    {(aiAnalysis.totalDosage.frontalis || 0) > 0 && (
+                      <div className="p-3 rounded-lg bg-background/50 border border-border/50 text-center">
+                        <p className="text-xl font-bold text-rose-500">{aiAnalysis.totalDosage.frontalis}U</p>
+                        <p className="text-xs text-muted-foreground">Frontal</p>
+                      </div>
+                    )}
+                    {(aiAnalysis.totalDosage.orbicularis_oculi || 0) > 0 && (
+                      <div className="p-3 rounded-lg bg-background/50 border border-border/50 text-center">
+                        <p className="text-xl font-bold text-pink-500">{aiAnalysis.totalDosage.orbicularis_oculi}U</p>
+                        <p className="text-xs text-muted-foreground">Orbicular</p>
+                      </div>
+                    )}
                   </div>
+                  <div className="mt-3 p-4 rounded-lg bg-gradient-to-r from-primary/10 to-accent/10 text-center">
+                    <p className="text-3xl font-bold text-foreground">{aiAnalysis.totalDosage.total}U</p>
+                    <p className="text-sm text-muted-foreground">Total Geral</p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Injection Points List */}
+              <Card className="border-border/50 max-h-[350px] overflow-hidden flex flex-col">
+                <CardHeader className="pb-2 flex-shrink-0">
+                  <CardTitle className="text-base">Pontos de Aplicação ({aiAnalysis.injectionPoints.length})</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2 overflow-y-auto flex-1 pr-2">
+                  {aiAnalysis.injectionPoints.map((point) => {
+                    const muscleColors: Record<string, string> = {
+                      procerus: '#F59E0B',
+                      corrugator_left: '#8B5CF6',
+                      corrugator_right: '#8B5CF6',
+                      frontalis: '#F43F5E',
+                      orbicularis_oculi_left: '#EC4899',
+                      orbicularis_oculi_right: '#EC4899',
+                      nasalis: '#06B6D4',
+                      mentalis: '#10B981',
+                    };
+                    const muscleLabels: Record<string, string> = {
+                      procerus: 'Prócero',
+                      corrugator_left: 'Corrugador Esq.',
+                      corrugator_right: 'Corrugador Dir.',
+                      frontalis: 'Frontal',
+                      orbicularis_oculi_left: 'Orbicular Olho Esq.',
+                      orbicularis_oculi_right: 'Orbicular Olho Dir.',
+                      nasalis: 'Nasal',
+                      levator_labii: 'Levantador Lábio',
+                      zygomaticus_major: 'Zigomático Maior',
+                      zygomaticus_minor: 'Zigomático Menor',
+                      orbicularis_oris: 'Orbicular Boca',
+                      depressor_anguli: 'Depressor Ângulo',
+                      mentalis: 'Mentual',
+                      masseter: 'Masseter',
+                    };
+
+                    return (
+                      <div 
+                        key={point.id}
+                        className={`p-3 rounded-lg border transition-all cursor-pointer ${
+                          selectedPoint?.id === point.id 
+                            ? 'border-primary bg-primary/10 shadow-md' 
+                            : 'border-border/50 hover:border-primary/50 hover:bg-muted/30'
+                        }`}
+                        onClick={() => setSelectedPoint(point)}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0 flex-1">
+                            <div 
+                              className="w-3 h-3 rounded-full flex-shrink-0 ring-2 ring-white shadow" 
+                              style={{ backgroundColor: muscleColors[point.muscle] || '#DC2626' }}
+                            />
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium truncate">
+                                {muscleLabels[point.muscle] || point.muscle}
+                              </p>
+                              <p className="text-xs text-muted-foreground truncate">
+                                {point.depth === 'deep' ? '🔵 Profundo' : '🟢 Superficial'}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1 flex-shrink-0">
+                            <Input
+                              type="number"
+                              value={point.dosage}
+                              onChange={(e) => handlePointDosageChange(point.id, parseInt(e.target.value) || 0)}
+                              className="w-14 h-8 text-center text-sm font-semibold"
+                              min={0}
+                              max={50}
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                            <span className="text-xs text-muted-foreground font-medium">U</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </CardContent>
               </Card>
             </div>
           </div>
 
           {/* Actions */}
-          <div className="flex justify-between pt-4">
+          <div className="flex justify-between pt-4 border-t border-border/50">
             <Button variant="outline" onClick={() => setStep(2)}>
               <ArrowLeft className="w-4 h-4 mr-2" />
               Voltar
             </Button>
-            <Button onClick={handleSaveAnalysis} disabled={isLoading} size="lg">
+            <Button onClick={handleSaveAnalysis} disabled={isLoading} size="lg" className="bg-gradient-to-r from-primary to-accent hover:opacity-90">
               {isLoading ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />

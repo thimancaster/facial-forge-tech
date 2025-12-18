@@ -19,16 +19,28 @@ export type Database = {
           ai_clinical_notes: string | null
           ai_confidence: number | null
           ai_injection_points: Json | null
+          conversion_factor: number | null
           corrugator_dosage: number | null
           created_at: string
           frontal_photo_url: string | null
           glabellar_photo_url: string | null
           id: string
+          muscle_strength_score: string | null
+          nasal_photo_url: string | null
           notes: string | null
+          patient_gender: string | null
           patient_id: string
+          perioral_photo_url: string | null
           procerus_dosage: number | null
+          product_type: string | null
+          profile_left_photo_url: string | null
+          profile_right_photo_url: string | null
           resting_photo_url: string | null
+          safety_zones: Json | null
+          skin_type_glogau: string | null
+          smile_photo_url: string | null
           status: string | null
+          treatment_zones: Json | null
           updated_at: string
           user_id: string
         }
@@ -36,16 +48,28 @@ export type Database = {
           ai_clinical_notes?: string | null
           ai_confidence?: number | null
           ai_injection_points?: Json | null
+          conversion_factor?: number | null
           corrugator_dosage?: number | null
           created_at?: string
           frontal_photo_url?: string | null
           glabellar_photo_url?: string | null
           id?: string
+          muscle_strength_score?: string | null
+          nasal_photo_url?: string | null
           notes?: string | null
+          patient_gender?: string | null
           patient_id: string
+          perioral_photo_url?: string | null
           procerus_dosage?: number | null
+          product_type?: string | null
+          profile_left_photo_url?: string | null
+          profile_right_photo_url?: string | null
           resting_photo_url?: string | null
+          safety_zones?: Json | null
+          skin_type_glogau?: string | null
+          smile_photo_url?: string | null
           status?: string | null
+          treatment_zones?: Json | null
           updated_at?: string
           user_id: string
         }
@@ -53,16 +77,28 @@ export type Database = {
           ai_clinical_notes?: string | null
           ai_confidence?: number | null
           ai_injection_points?: Json | null
+          conversion_factor?: number | null
           corrugator_dosage?: number | null
           created_at?: string
           frontal_photo_url?: string | null
           glabellar_photo_url?: string | null
           id?: string
+          muscle_strength_score?: string | null
+          nasal_photo_url?: string | null
           notes?: string | null
+          patient_gender?: string | null
           patient_id?: string
+          perioral_photo_url?: string | null
           procerus_dosage?: number | null
+          product_type?: string | null
+          profile_left_photo_url?: string | null
+          profile_right_photo_url?: string | null
           resting_photo_url?: string | null
+          safety_zones?: Json | null
+          skin_type_glogau?: string | null
+          smile_photo_url?: string | null
           status?: string | null
+          treatment_zones?: Json | null
           updated_at?: string
           user_id?: string
         }
@@ -133,6 +169,60 @@ export type Database = {
           specialty?: string | null
           updated_at?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      treatment_templates: {
+        Row: {
+          created_at: string
+          default_units: number
+          description: string | null
+          gender_modifier_female: number | null
+          gender_modifier_male: number | null
+          id: string
+          injection_pattern: string | null
+          injection_points: Json
+          is_active: boolean | null
+          muscle_modifier_high: number | null
+          muscle_modifier_low: number | null
+          muscle_modifier_medium: number | null
+          name: string
+          updated_at: string
+          zone_type: string
+        }
+        Insert: {
+          created_at?: string
+          default_units: number
+          description?: string | null
+          gender_modifier_female?: number | null
+          gender_modifier_male?: number | null
+          id?: string
+          injection_pattern?: string | null
+          injection_points: Json
+          is_active?: boolean | null
+          muscle_modifier_high?: number | null
+          muscle_modifier_low?: number | null
+          muscle_modifier_medium?: number | null
+          name: string
+          updated_at?: string
+          zone_type: string
+        }
+        Update: {
+          created_at?: string
+          default_units?: number
+          description?: string | null
+          gender_modifier_female?: number | null
+          gender_modifier_male?: number | null
+          id?: string
+          injection_pattern?: string | null
+          injection_points?: Json
+          is_active?: boolean | null
+          muscle_modifier_high?: number | null
+          muscle_modifier_low?: number | null
+          muscle_modifier_medium?: number | null
+          name?: string
+          updated_at?: string
+          zone_type?: string
         }
         Relationships: []
       }

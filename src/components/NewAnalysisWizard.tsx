@@ -5,24 +5,34 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
-import { Upload, ArrowLeft, ArrowRight, Check, User, Camera, Crosshair, Loader2, FolderOpen, X, Sparkles, Brain, Eye, Tag, FileDown } from "lucide-react";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Upload, ArrowLeft, ArrowRight, Check, User, Camera, Crosshair, Loader2, FolderOpen, X, Sparkles, Brain, Eye, Tag, FileDown, Settings2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { CameraCapture, PhotoType } from "./CameraCapture";
 import { Face3DViewer, InjectionPoint } from "./Face3DViewer";
 import { DosageSafetyAlert } from "./DosageSafetyAlert";
+import { ProductSelector, TOXIN_PRODUCTS } from "./ProductSelector";
+import { TreatmentTemplates } from "./TreatmentTemplates";
 import { exportAnalysisPdf } from "@/lib/exportPdf";
 
 interface PatientData {
   name: string;
   age: string;
   observations: string;
+  gender: string;
 }
 
 interface PhotoData {
   resting: File | null;
   glabellar: File | null;
   frontal: File | null;
+  smile: File | null;
+  nasal: File | null;
+  perioral: File | null;
+  profile_left: File | null;
+  profile_right: File | null;
 }
 
 interface AIAnalysis {
@@ -37,7 +47,23 @@ interface AIAnalysis {
   };
   clinicalNotes: string;
   confidence: number;
+  safetyZones?: Array<{
+    region: string;
+    reason: string;
+    polygon_coordinates?: Array<{ x: number; y: number }>;
+  }>;
 }
+
+const PHOTO_TYPES: { key: PhotoType; label: string; desc: string; required: boolean }[] = [
+  { key: "resting", label: "Face em Repouso", desc: "Expressão neutra", required: true },
+  { key: "glabellar", label: "Contração Glabelar", desc: "Expressão 'Bravo'", required: true },
+  { key: "frontal", label: "Contração Frontal", desc: "Expressão 'Surpresa'", required: false },
+  { key: "smile", label: "Sorriso", desc: "Sorriso natural", required: false },
+  { key: "nasal", label: "Contração Nasal", desc: "Nariz contraído", required: false },
+  { key: "perioral", label: "Projeção Labial", desc: "Boca projetada", required: false },
+  { key: "profile_left", label: "Perfil Esquerdo", desc: "Virado para direita", required: false },
+  { key: "profile_right", label: "Perfil Direito", desc: "Virado para esquerda", required: false },
+];
 
 export function NewAnalysisWizard() {
   const [step, setStep] = useState(1);
@@ -50,35 +76,48 @@ export function NewAnalysisWizard() {
     name: "",
     age: "",
     observations: "",
+    gender: "feminino",
   });
   
   const [photos, setPhotos] = useState<PhotoData>({
     resting: null,
     glabellar: null,
     frontal: null,
+    smile: null,
+    nasal: null,
+    perioral: null,
+    profile_left: null,
+    profile_right: null,
   });
+  
+  // Treatment configuration
+  const [selectedProduct, setSelectedProduct] = useState("botox");
+  const [conversionFactor, setConversionFactor] = useState(1.0);
+  const [muscleStrength, setMuscleStrength] = useState("medium");
+  const [skinTypeGlogau, setSkinTypeGlogau] = useState("II");
   
   const [aiAnalysis, setAiAnalysis] = useState<AIAnalysis | null>(null);
   const [selectedPoint, setSelectedPoint] = useState<InjectionPoint | null>(null);
   const [showMuscles, setShowMuscles] = useState(true);
   const [showLabels, setShowLabels] = useState(true);
+  const [showDangerZones, setShowDangerZones] = useState(true);
   
   // Temporary photo URLs for preview and AI analysis
-  const [photoUrls, setPhotoUrls] = useState<{
-    resting: string | null;
-    glabellar: string | null;
-    frontal: string | null;
-  }>({
+  const [photoUrls, setPhotoUrls] = useState<Record<PhotoType, string | null>>({
     resting: null,
     glabellar: null,
     frontal: null,
+    smile: null,
+    nasal: null,
+    perioral: null,
+    profile_left: null,
+    profile_right: null,
   });
 
   const handlePhotoUpload = (type: PhotoType) => (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       setPhotos(prev => ({ ...prev, [type]: file }));
-      // Create preview URL
       const url = URL.createObjectURL(file);
       setPhotoUrls(prev => ({ ...prev, [type]: url }));
     }
@@ -118,7 +157,6 @@ export function NewAnalysisWizard() {
     return publicUrl;
   };
 
-  // Convert file to base64 for AI analysis
   const fileToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -128,44 +166,75 @@ export function NewAnalysisWizard() {
     });
   };
 
-  // Call AI analysis when moving to step 3
+  const handleProductChange = (productId: string, factor: number) => {
+    setSelectedProduct(productId);
+    setConversionFactor(factor);
+  };
+
+  const handleApplyTemplate = (points: any[], totalUnits: number) => {
+    setAiAnalysis({
+      injectionPoints: points,
+      totalDosage: {
+        procerus: points.filter(p => p.muscle === 'procerus').reduce((sum, p) => sum + p.dosage, 0),
+        corrugator: points.filter(p => p.muscle.startsWith('corrugator')).reduce((sum, p) => sum + p.dosage, 0),
+        frontalis: points.filter(p => p.muscle === 'frontalis').reduce((sum, p) => sum + p.dosage, 0),
+        orbicularis_oculi: points.filter(p => p.muscle.startsWith('orbicularis_oculi')).reduce((sum, p) => sum + p.dosage, 0),
+        total: totalUnits,
+      },
+      clinicalNotes: "Protocolo aplicado a partir de template pré-definido. Ajuste conforme avaliação clínica.",
+      confidence: 0.9,
+    });
+    toast({
+      title: "Template aplicado!",
+      description: `${points.length} pontos de injeção configurados.`,
+    });
+  };
+
   const handleAnalyzePhotos = async () => {
     setIsAnalyzing(true);
     try {
-      // Convert photos to base64
       const imageUrls: string[] = [];
       
-      if (photos.resting) {
-        imageUrls.push(await fileToBase64(photos.resting));
-      }
-      if (photos.glabellar) {
-        imageUrls.push(await fileToBase64(photos.glabellar));
-      }
-      if (photos.frontal) {
-        imageUrls.push(await fileToBase64(photos.frontal));
+      for (const photoType of PHOTO_TYPES.map(p => p.key)) {
+        const file = photos[photoType];
+        if (file) {
+          imageUrls.push(await fileToBase64(file));
+        }
       }
 
       if (imageUrls.length === 0) {
-        // No photos, use default analysis
         setAiAnalysis({
           injectionPoints: [
-            { id: "proc_1", muscle: "procerus", x: 50, y: 25, depth: "deep", dosage: 8, notes: "Ponto central do procerus" },
-            { id: "corr_l1", muscle: "corrugator_left", x: 35, y: 22, depth: "deep", dosage: 8, notes: "Corrugador medial esquerdo" },
-            { id: "corr_l2", muscle: "corrugator_left", x: 28, y: 20, depth: "superficial", dosage: 6, notes: "Corrugador lateral esquerdo" },
-            { id: "corr_r1", muscle: "corrugator_right", x: 65, y: 22, depth: "deep", dosage: 8, notes: "Corrugador medial direito" },
-            { id: "corr_r2", muscle: "corrugator_right", x: 72, y: 20, depth: "superficial", dosage: 6, notes: "Corrugador lateral direito" },
+            { id: "proc_1", muscle: "procerus", x: 50, y: 25, depth: "deep", dosage: Math.round(8 * conversionFactor), notes: "Ponto central do procerus" },
+            { id: "corr_l1", muscle: "corrugator_left", x: 35, y: 22, depth: "deep", dosage: Math.round(8 * conversionFactor), notes: "Corrugador medial esquerdo" },
+            { id: "corr_l2", muscle: "corrugator_left", x: 28, y: 20, depth: "superficial", dosage: Math.round(6 * conversionFactor), notes: "Corrugador lateral esquerdo" },
+            { id: "corr_r1", muscle: "corrugator_right", x: 65, y: 22, depth: "deep", dosage: Math.round(8 * conversionFactor), notes: "Corrugador medial direito" },
+            { id: "corr_r2", muscle: "corrugator_right", x: 72, y: 20, depth: "superficial", dosage: Math.round(6 * conversionFactor), notes: "Corrugador lateral direito" },
           ],
-          totalDosage: { procerus: 8, corrugator: 28, total: 36 },
+          totalDosage: { procerus: Math.round(8 * conversionFactor), corrugator: Math.round(28 * conversionFactor), total: Math.round(36 * conversionFactor) },
           clinicalNotes: "Análise padrão para tratamento glabelar. Ajuste conforme massa muscular e histórico do paciente.",
-          confidence: 0.7
+          confidence: 0.7,
+          safetyZones: [
+            { region: "Margem Orbital", reason: "Evitar para prevenir ptose palpebral" },
+            { region: "Área Infraorbital", reason: "Risco de difusão para músculos oculares" },
+          ],
         });
-        setStep(3);
+        setStep(4);
         return;
       }
 
-      // Call edge function
       const { data, error } = await supabase.functions.invoke('analyze-face', {
-        body: { imageUrls }
+        body: { 
+          imageUrls,
+          patientContext: {
+            gender: patientData.gender,
+            age: patientData.age ? parseInt(patientData.age) : null,
+            muscleStrength,
+            skinTypeGlogau,
+          },
+          productType: selectedProduct,
+          conversionFactor,
+        }
       });
 
       if (error) {
@@ -174,7 +243,7 @@ export function NewAnalysisWizard() {
       }
 
       setAiAnalysis(data);
-      setStep(3);
+      setStep(4);
       
       toast({
         title: "Análise concluída!",
@@ -189,18 +258,17 @@ export function NewAnalysisWizard() {
         variant: "destructive",
       });
       
-      // Fallback to default
       setAiAnalysis({
         injectionPoints: [
-          { id: "proc_1", muscle: "procerus", x: 50, y: 25, depth: "deep", dosage: 8, notes: "Ponto central do procerus" },
-          { id: "corr_l1", muscle: "corrugator_left", x: 35, y: 22, depth: "deep", dosage: 8, notes: "Corrugador medial" },
-          { id: "corr_r1", muscle: "corrugator_right", x: 65, y: 22, depth: "deep", dosage: 8, notes: "Corrugador medial" },
+          { id: "proc_1", muscle: "procerus", x: 50, y: 25, depth: "deep", dosage: Math.round(8 * conversionFactor), notes: "Ponto central do procerus" },
+          { id: "corr_l1", muscle: "corrugator_left", x: 35, y: 22, depth: "deep", dosage: Math.round(8 * conversionFactor), notes: "Corrugador medial" },
+          { id: "corr_r1", muscle: "corrugator_right", x: 65, y: 22, depth: "deep", dosage: Math.round(8 * conversionFactor), notes: "Corrugador medial" },
         ],
-        totalDosage: { procerus: 8, corrugator: 16, total: 24 },
+        totalDosage: { procerus: Math.round(8 * conversionFactor), corrugator: Math.round(16 * conversionFactor), total: Math.round(24 * conversionFactor) },
         clinicalNotes: "Análise padrão (fallback).",
-        confidence: 0.5
+        confidence: 0.5,
       });
-      setStep(3);
+      setStep(4);
     } finally {
       setIsAnalyzing(false);
     }
@@ -242,7 +310,6 @@ export function NewAnalysisWizard() {
     });
   };
 
-  // Calcular dosagens por músculo para alertas de segurança
   const dosagesByMuscle = useMemo(() => {
     if (!aiAnalysis) return {};
     
@@ -252,7 +319,6 @@ export function NewAnalysisWizard() {
     }, {} as Record<string, number>);
   }, [aiAnalysis]);
 
-  // Exportar PDF
   const handleExportPdf = async () => {
     if (!aiAnalysis) return;
     
@@ -303,7 +369,6 @@ export function NewAnalysisWizard() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Usuário não autenticado");
 
-      // Create patient first
       const { data: patient, error: patientError } = await supabase
         .from('patients')
         .insert({
@@ -317,14 +382,18 @@ export function NewAnalysisWizard() {
 
       if (patientError) throw patientError;
 
-      // Upload photos in parallel
-      const uploadedUrls = await Promise.all([
-        photos.resting ? uploadPhotoToStorage(photos.resting, user.id, patient.id, 'resting') : null,
-        photos.glabellar ? uploadPhotoToStorage(photos.glabellar, user.id, patient.id, 'glabellar') : null,
-        photos.frontal ? uploadPhotoToStorage(photos.frontal, user.id, patient.id, 'frontal') : null,
-      ]);
+      // Upload all photos in parallel
+      const photoKeys = Object.keys(photos) as PhotoType[];
+      const uploadPromises = photoKeys.map(key => 
+        photos[key] ? uploadPhotoToStorage(photos[key]!, user.id, patient.id, key) : Promise.resolve(null)
+      );
+      const uploadedUrls = await Promise.all(uploadPromises);
 
-      // Create analysis with photo URLs and AI data
+      const photoUrlsMap: Record<string, string | null> = {};
+      photoKeys.forEach((key, index) => {
+        photoUrlsMap[`${key}_photo_url`] = uploadedUrls[index];
+      });
+
       const { error: analysisError } = await supabase
         .from('analyses')
         .insert({
@@ -332,12 +401,23 @@ export function NewAnalysisWizard() {
           patient_id: patient.id,
           procerus_dosage: aiAnalysis?.totalDosage.procerus || 0,
           corrugator_dosage: aiAnalysis?.totalDosage.corrugator || 0,
-          resting_photo_url: uploadedUrls[0],
-          glabellar_photo_url: uploadedUrls[1],
-          frontal_photo_url: uploadedUrls[2],
+          resting_photo_url: photoUrlsMap['resting_photo_url'],
+          glabellar_photo_url: photoUrlsMap['glabellar_photo_url'],
+          frontal_photo_url: photoUrlsMap['frontal_photo_url'],
+          smile_photo_url: photoUrlsMap['smile_photo_url'],
+          nasal_photo_url: photoUrlsMap['nasal_photo_url'],
+          perioral_photo_url: photoUrlsMap['perioral_photo_url'],
+          profile_left_photo_url: photoUrlsMap['profile_left_photo_url'],
+          profile_right_photo_url: photoUrlsMap['profile_right_photo_url'],
           ai_injection_points: aiAnalysis?.injectionPoints as any || null,
           ai_clinical_notes: aiAnalysis?.clinicalNotes || null,
           ai_confidence: aiAnalysis?.confidence || null,
+          product_type: TOXIN_PRODUCTS.find(p => p.id === selectedProduct)?.genericName || 'OnabotulinumtoxinA',
+          conversion_factor: conversionFactor,
+          patient_gender: patientData.gender,
+          muscle_strength_score: muscleStrength,
+          skin_type_glogau: skinTypeGlogau,
+          safety_zones: aiAnalysis?.safetyZones as any || null,
           status: 'completed',
         });
 
@@ -350,11 +430,20 @@ export function NewAnalysisWizard() {
 
       // Reset form
       setStep(1);
-      setPatientData({ name: "", age: "", observations: "" });
-      setPhotos({ resting: null, glabellar: null, frontal: null });
-      setPhotoUrls({ resting: null, glabellar: null, frontal: null });
+      setPatientData({ name: "", age: "", observations: "", gender: "feminino" });
+      setPhotos({
+        resting: null, glabellar: null, frontal: null, smile: null,
+        nasal: null, perioral: null, profile_left: null, profile_right: null,
+      });
+      setPhotoUrls({
+        resting: null, glabellar: null, frontal: null, smile: null,
+        nasal: null, perioral: null, profile_left: null, profile_right: null,
+      });
       setAiAnalysis(null);
       setSelectedPoint(null);
+      setSelectedProduct("botox");
+      setConversionFactor(1.0);
+      setMuscleStrength("medium");
       
     } catch (error: any) {
       toast({
@@ -368,7 +457,11 @@ export function NewAnalysisWizard() {
   };
 
   const canProceedStep1 = patientData.name.trim().length > 0;
-  const canProceedStep2 = photos.resting || photos.glabellar || photos.frontal;
+  const hasAnyPhoto = Object.values(photos).some(p => p !== null);
+
+  const getPhotoLabel = (type: PhotoType): string => {
+    return PHOTO_TYPES.find(p => p.key === type)?.label || type;
+  };
 
   return (
     <div className="max-w-6xl mx-auto">
@@ -376,8 +469,9 @@ export function NewAnalysisWizard() {
       <div className="flex items-center justify-center mb-8">
         {[
           { num: 1, label: "Paciente" },
-          { num: 2, label: "Fotos" },
-          { num: 3, label: "Análise IA" }
+          { num: 2, label: "Configuração" },
+          { num: 3, label: "Fotos" },
+          { num: 4, label: "Análise IA" }
         ].map((s, i) => (
           <div key={s.num} className="flex items-center">
             <div className="flex flex-col items-center">
@@ -392,9 +486,9 @@ export function NewAnalysisWizard() {
               </div>
               <span className="text-xs mt-1 text-muted-foreground">{s.label}</span>
             </div>
-            {i < 2 && (
+            {i < 3 && (
               <div
-                className={`w-20 h-1 mx-2 rounded ${
+                className={`w-16 h-1 mx-2 rounded ${
                   step > s.num ? "bg-primary" : "bg-muted"
                 }`}
               />
@@ -436,6 +530,25 @@ export function NewAnalysisWizard() {
                 />
               </div>
             </div>
+
+            <div className="space-y-2">
+              <Label>Gênero</Label>
+              <RadioGroup
+                value={patientData.gender}
+                onValueChange={(value) => setPatientData(prev => ({ ...prev, gender: value }))}
+                className="flex gap-4"
+              >
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="feminino" id="feminino" />
+                  <Label htmlFor="feminino" className="cursor-pointer">Feminino</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="masculino" id="masculino" />
+                  <Label htmlFor="masculino" className="cursor-pointer">Masculino</Label>
+                </div>
+              </RadioGroup>
+            </div>
+
             <div className="space-y-2">
               <Label htmlFor="observations">Observações</Label>
               <Textarea
@@ -456,8 +569,82 @@ export function NewAnalysisWizard() {
         </Card>
       )}
 
-      {/* Step 2: Photo Upload */}
+      {/* Step 2: Treatment Configuration */}
       {step === 2 && (
+        <Card className="border-border/50">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-3">
+              <Settings2 className="w-5 h-5 text-primary" />
+              Configuração do Tratamento
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Left column - Product and settings */}
+              <div className="space-y-6">
+                <ProductSelector
+                  selectedProduct={selectedProduct}
+                  onProductChange={handleProductChange}
+                />
+
+                <div className="space-y-2">
+                  <Label>Força Muscular</Label>
+                  <Select value={muscleStrength} onValueChange={setMuscleStrength}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione a força muscular" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="low">Baixa - Músculos finos</SelectItem>
+                      <SelectItem value="medium">Média - Padrão</SelectItem>
+                      <SelectItem value="high">Alta - Músculos fortes</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Influencia o cálculo de dosagem (baixa: 0.8x, média: 1x, alta: 1.2x)
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Tipo de Pele (Escala de Glogau)</Label>
+                  <Select value={skinTypeGlogau} onValueChange={setSkinTypeGlogau}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione o tipo de pele" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="I">Tipo I - Sem rugas (20-30 anos)</SelectItem>
+                      <SelectItem value="II">Tipo II - Rugas em movimento (30-40 anos)</SelectItem>
+                      <SelectItem value="III">Tipo III - Rugas em repouso (40-55 anos)</SelectItem>
+                      <SelectItem value="IV">Tipo IV - Rugas severas (55+ anos)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* Right column - Treatment templates */}
+              <TreatmentTemplates
+                patientGender={patientData.gender}
+                muscleStrength={muscleStrength}
+                conversionFactor={conversionFactor}
+                onSelectTemplate={handleApplyTemplate}
+              />
+            </div>
+
+            <div className="flex justify-between pt-4">
+              <Button variant="outline" onClick={() => setStep(1)}>
+                <ArrowLeft className="w-4 h-4 mr-2" />
+                Voltar
+              </Button>
+              <Button onClick={() => setStep(3)}>
+                Próximo
+                <ArrowRight className="w-4 h-4 ml-2" />
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Step 3: Photo Upload */}
+      {step === 3 && (
         <Card className="border-border/50">
           <CardHeader>
             <CardTitle className="flex items-center gap-3">
@@ -466,17 +653,15 @@ export function NewAnalysisWizard() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-              {[
-                { key: "resting" as PhotoType, label: "Face em Repouso", desc: "Expressão neutra" },
-                { key: "glabellar" as PhotoType, label: "Contração Glabelar", desc: "Expressão 'Bravo'" },
-                { key: "frontal" as PhotoType, label: "Contração Frontal", desc: "Expressão 'Surpresa'" },
-              ].map((photo) => (
-                <div key={photo.key} className="space-y-3">
-                  <Label>{photo.label}</Label>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+              {PHOTO_TYPES.map((photo) => (
+                <div key={photo.key} className="space-y-2">
+                  <div className="flex items-center gap-1">
+                    <Label className="text-sm">{photo.label}</Label>
+                    {photo.required && <span className="text-red-500 text-xs">*</span>}
+                  </div>
                   
-                  {/* Photo Preview */}
-                  <div className="relative h-40 border-2 border-dashed border-border/50 rounded-lg overflow-hidden bg-muted/20">
+                  <div className="relative h-32 border-2 border-dashed border-border/50 rounded-lg overflow-hidden bg-muted/20">
                     {photoUrls[photo.key] ? (
                       <>
                         <img
@@ -487,35 +672,34 @@ export function NewAnalysisWizard() {
                         <Button
                           variant="destructive"
                           size="icon"
-                          className="absolute top-2 right-2 w-7 h-7"
+                          className="absolute top-1 right-1 w-6 h-6"
                           onClick={() => removePhoto(photo.key)}
                         >
-                          <X className="w-4 h-4" />
+                          <X className="w-3 h-3" />
                         </Button>
                       </>
                     ) : (
-                      <div className="flex flex-col items-center justify-center h-full text-center p-4">
-                        <Upload className="w-8 h-8 text-muted-foreground mb-2" />
-                        <p className="text-sm text-muted-foreground">{photo.desc}</p>
+                      <div className="flex flex-col items-center justify-center h-full text-center p-2">
+                        <Upload className="w-6 h-6 text-muted-foreground mb-1" />
+                        <p className="text-xs text-muted-foreground">{photo.desc}</p>
                       </div>
                     )}
                   </div>
 
-                  {/* Action Buttons */}
-                  <div className="flex gap-2">
+                  <div className="flex gap-1">
                     <Button
                       variant="outline"
                       size="sm"
-                      className="flex-1"
+                      className="flex-1 text-xs px-2"
                       onClick={() => setCameraOpen(photo.key)}
                     >
-                      <Camera className="w-4 h-4 mr-2" />
-                      Tirar Foto
+                      <Camera className="w-3 h-3 mr-1" />
+                      Câmera
                     </Button>
                     <label className="flex-1">
-                      <Button variant="outline" size="sm" className="w-full" asChild>
+                      <Button variant="outline" size="sm" className="w-full text-xs px-2" asChild>
                         <span>
-                          <FolderOpen className="w-4 h-4 mr-2" />
+                          <FolderOpen className="w-3 h-3 mr-1" />
                           Arquivo
                         </span>
                       </Button>
@@ -531,7 +715,7 @@ export function NewAnalysisWizard() {
               ))}
             </div>
             <div className="flex justify-between pt-4">
-              <Button variant="outline" onClick={() => setStep(1)}>
+              <Button variant="outline" onClick={() => setStep(2)}>
                 <ArrowLeft className="w-4 h-4 mr-2" />
                 Voltar
               </Button>
@@ -564,23 +748,17 @@ export function NewAnalysisWizard() {
           onClose={() => setCameraOpen(null)}
           onCapture={handleCameraCapture(cameraOpen)}
           photoType={cameraOpen}
-          photoLabel={
-            cameraOpen === "resting" 
-              ? "Face em Repouso" 
-              : cameraOpen === "glabellar" 
-                ? "Contração Glabelar" 
-                : "Contração Frontal"
-          }
+          photoLabel={getPhotoLabel(cameraOpen)}
         />
       )}
 
-      {/* Step 3: AI Analysis & 3D Visualization */}
-      {step === 3 && aiAnalysis && (
+      {/* Step 4: AI Analysis & 3D Visualization */}
+      {step === 4 && aiAnalysis && (
         <div className="space-y-6">
           {/* AI Analysis Header */}
           <Card className="border-primary/20 bg-gradient-to-r from-primary/5 to-accent/5">
             <CardContent className="py-4">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between flex-wrap gap-4">
                 <div className="flex items-center gap-3">
                   <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center shadow-lg">
                     <Brain className="w-6 h-6 text-white" />
@@ -590,6 +768,11 @@ export function NewAnalysisWizard() {
                     <p className="text-sm text-muted-foreground">
                       {aiAnalysis.injectionPoints.length} pontos identificados • 
                       Confiança: <span className="font-medium text-primary">{Math.round(aiAnalysis.confidence * 100)}%</span>
+                      {conversionFactor !== 1 && (
+                        <span className="ml-2 text-amber-600">
+                          • {TOXIN_PRODUCTS.find(p => p.id === selectedProduct)?.name}
+                        </span>
+                      )}
                     </p>
                   </div>
                 </div>
@@ -605,12 +788,12 @@ export function NewAnalysisWizard() {
             {/* 3D Face Viewer - Larger */}
             <Card className="xl:col-span-3 border-border/50 overflow-hidden">
               <CardHeader className="pb-2">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between flex-wrap gap-2">
                   <CardTitle className="flex items-center gap-3 text-base">
                     <Crosshair className="w-5 h-5 text-primary" />
                     Modelo Anatômico 3D
                   </CardTitle>
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-4 flex-wrap">
                     <div className="flex items-center gap-2">
                       <Switch
                         id="show-muscles"
@@ -633,6 +816,16 @@ export function NewAnalysisWizard() {
                         Legendas
                       </Label>
                     </div>
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        id="show-danger-zones"
+                        checked={showDangerZones}
+                        onCheckedChange={setShowDangerZones}
+                      />
+                      <Label htmlFor="show-danger-zones" className="text-xs flex items-center gap-1 cursor-pointer text-red-500">
+                        ⚠️ Zonas
+                      </Label>
+                    </div>
                   </div>
                 </div>
               </CardHeader>
@@ -643,6 +836,8 @@ export function NewAnalysisWizard() {
                     onPointClick={setSelectedPoint}
                     showMuscles={showMuscles}
                     showLabels={showLabels}
+                    showDangerZones={showDangerZones}
+                    safetyZones={aiAnalysis.safetyZones}
                   />
                 </div>
               </CardContent>
@@ -786,7 +981,7 @@ export function NewAnalysisWizard() {
 
           {/* Actions */}
           <div className="flex justify-between pt-4 border-t border-border/50">
-            <Button variant="outline" onClick={() => setStep(2)}>
+            <Button variant="outline" onClick={() => setStep(3)}>
               <ArrowLeft className="w-4 h-4 mr-2" />
               Voltar
             </Button>

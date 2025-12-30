@@ -13,6 +13,12 @@ export interface InjectionPoint {
   notes?: string;
 }
 
+export interface SafetyZone {
+  region: string;
+  reason: string;
+  polygon_coordinates?: Array<{ x: number; y: number }>;
+}
+
 interface Face3DViewerProps {
   injectionPoints: InjectionPoint[];
   onPointClick?: (point: InjectionPoint) => void;
@@ -20,6 +26,8 @@ interface Face3DViewerProps {
   isLoading?: boolean;
   showLabels?: boolean;
   showMuscles?: boolean;
+  showDangerZones?: boolean;
+  safetyZones?: SafetyZone[];
 }
 
 // Muscle definitions with anatomical data
@@ -100,6 +108,50 @@ const MUSCLE_DATA: Record<string, {
   }
 };
 
+// Danger zones with 3D positions
+const DANGER_ZONES = [
+  {
+    id: "orbital_margin",
+    label: "Margem Orbital",
+    color: "#EF4444",
+    positions: [
+      { center: [-0.55, 0.35, 1.35] as [number, number, number], radius: 0.25 },
+      { center: [0.55, 0.35, 1.35] as [number, number, number], radius: 0.25 },
+    ],
+    reason: "Risco de ptose palpebral - manter 2cm acima"
+  },
+  {
+    id: "infraorbital",
+    label: "Área Infraorbital",
+    color: "#F97316",
+    positions: [
+      { center: [-0.45, 0.1, 1.3] as [number, number, number], radius: 0.2 },
+      { center: [0.45, 0.1, 1.3] as [number, number, number], radius: 0.2 },
+    ],
+    reason: "Risco de difusão para músculos oculares"
+  },
+  {
+    id: "labial_commissure",
+    label: "Comissura Labial",
+    color: "#FBBF24",
+    positions: [
+      { center: [-0.35, -0.55, 1.4] as [number, number, number], radius: 0.15 },
+      { center: [0.35, -0.55, 1.4] as [number, number, number], radius: 0.15 },
+    ],
+    reason: "Risco de assimetria do sorriso"
+  },
+  {
+    id: "mediopupilar_line",
+    label: "Linha Mediopupilar",
+    color: "#A855F7",
+    positions: [
+      { center: [-0.55, 0.6, 1.2] as [number, number, number], radius: 0.08 },
+      { center: [0.55, 0.6, 1.2] as [number, number, number], radius: 0.08 },
+    ],
+    reason: "Limite lateral para injeções glabelares"
+  }
+];
+
 // Point colors by muscle group
 function getMuscleColor(muscle: string): string {
   return MUSCLE_DATA[muscle]?.color || "#B85450";
@@ -109,47 +161,72 @@ function getMuscleColor(muscle: string): string {
 function percentTo3D(x: number, y: number): [number, number, number] {
   const x3d = ((x - 50) / 50) * 1.4;
   const y3d = ((50 - y) / 50) * 1.8 + 0.2;
-  // More realistic face curvature
   const curveFactor = 1 - Math.pow(Math.abs(x3d) / 1.4, 2) * 0.4;
   const z3d = Math.sqrt(Math.max(0.1, 2.0 - x3d * x3d * 0.5 - Math.pow((y3d - 0.3) / 2, 2) * 0.3)) * curveFactor + 0.4;
   return [x3d, y3d, z3d];
 }
 
-// Anatomical muscle mesh component
-function MuscleMesh({ 
-  position, 
-  scale, 
-  rotation, 
-  color,
-  geometry = "ellipse"
+// Danger zone sphere component
+function DangerZoneMesh({ 
+  center, 
+  radius, 
+  color, 
+  label,
+  reason
 }: { 
-  position: [number, number, number];
-  scale: [number, number, number];
-  rotation?: [number, number, number];
+  center: [number, number, number];
+  radius: number;
   color: string;
-  geometry?: "ellipse" | "curved" | "strip";
+  label: string;
+  reason: string;
 }) {
   const meshRef = useRef<THREE.Mesh>(null);
-  
+  const [hovered, setHovered] = useState(false);
+
+  useFrame((state) => {
+    if (meshRef.current && meshRef.current.material) {
+      const material = meshRef.current.material as THREE.MeshStandardMaterial;
+      material.opacity = 0.25 + Math.sin(state.clock.elapsedTime * 2) * 0.1;
+    }
+  });
+
   return (
-    <mesh 
-      ref={meshRef}
-      position={position} 
-      rotation={rotation || [0, 0, 0]}
-      scale={scale}
-    >
-      {geometry === "strip" ? (
-        <planeGeometry args={[1, 1, 8, 8]} />
-      ) : (
-        <sphereGeometry args={[1, 32, 32, 0, Math.PI * 2, 0, Math.PI]} />
+    <group position={center}>
+      <mesh
+        ref={meshRef}
+        onPointerOver={() => setHovered(true)}
+        onPointerOut={() => setHovered(false)}
+      >
+        <sphereGeometry args={[radius, 24, 24]} />
+        <meshStandardMaterial 
+          color={color}
+          transparent
+          opacity={0.3}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+      {/* Wireframe outline */}
+      <mesh>
+        <sphereGeometry args={[radius * 1.02, 16, 16]} />
+        <meshBasicMaterial 
+          color={color}
+          wireframe
+          transparent
+          opacity={0.6}
+        />
+      </mesh>
+      
+      {hovered && (
+        <Html distanceFactor={8} style={{ pointerEvents: "none" }}>
+          <div className="bg-red-900/95 backdrop-blur-sm border border-red-500/50 rounded-lg px-4 py-3 shadow-2xl whitespace-nowrap min-w-[200px]">
+            <p className="font-bold text-red-300 text-sm flex items-center gap-2">
+              ⚠️ {label}
+            </p>
+            <p className="text-xs text-red-200 mt-1">{reason}</p>
+          </div>
+        </Html>
       )}
-      <meshStandardMaterial 
-        color={color}
-        roughness={0.7}
-        metalness={0.1}
-        side={THREE.DoubleSide}
-      />
-    </mesh>
+    </group>
   );
 }
 
@@ -169,7 +246,6 @@ function MuscleWithFibers({
 }) {
   const meshRef = useRef<THREE.Mesh>(null);
   
-  // Create a simple texture-like pattern using geometry
   const fibers = useMemo(() => {
     const lines: JSX.Element[] = [];
     const count = 8;
@@ -215,7 +291,6 @@ function InjectionPointMesh({
   const ringRef = useRef<THREE.Mesh>(null);
   const [hovered, setHovered] = useState(false);
   const position = percentTo3D(point.x, point.y);
-  const color = getMuscleColor(point.muscle);
   const muscleLabel = MUSCLE_DATA[point.muscle]?.label || point.muscle;
 
   useFrame((state) => {
@@ -300,11 +375,9 @@ function InjectionPointMesh({
 
 // Anatomical face with visible muscles
 function AnatomicalFaceModel({ showMuscles = true }: { showMuscles?: boolean }) {
-  const muscleOpacity = showMuscles ? 1 : 0;
-  
   return (
     <group>
-      {/* Base skull/skin layer - slightly visible under muscles */}
+      {/* Base skull/skin layer */}
       <mesh position={[0, 0, -0.1]}>
         <sphereGeometry args={[1.7, 64, 64]} />
         <meshStandardMaterial 
@@ -318,7 +391,6 @@ function AnatomicalFaceModel({ showMuscles = true }: { showMuscles?: boolean }) 
 
       {/* ===== FRONTAL MUSCLE (Forehead) ===== */}
       <group visible={showMuscles}>
-        {/* Left frontalis */}
         <MuscleWithFibers
           position={[-0.5, 1.3, 0.9]}
           scale={[0.7, 0.9, 1]}
@@ -326,7 +398,6 @@ function AnatomicalFaceModel({ showMuscles = true }: { showMuscles?: boolean }) 
           color="#C06060"
           fiberDirection="vertical"
         />
-        {/* Right frontalis */}
         <MuscleWithFibers
           position={[0.5, 1.3, 0.9]}
           scale={[0.7, 0.9, 1]}
@@ -334,7 +405,6 @@ function AnatomicalFaceModel({ showMuscles = true }: { showMuscles?: boolean }) 
           color="#C06060"
           fiberDirection="vertical"
         />
-        {/* Center frontalis */}
         <MuscleWithFibers
           position={[0, 1.4, 1.0]}
           scale={[0.5, 0.7, 1]}
@@ -357,7 +427,6 @@ function AnatomicalFaceModel({ showMuscles = true }: { showMuscles?: boolean }) 
 
       {/* ===== CORRUGATOR MUSCLES (Eyebrows) ===== */}
       <group visible={showMuscles}>
-        {/* Left corrugator */}
         <MuscleWithFibers
           position={[-0.45, 0.6, 1.15]}
           scale={[0.5, 0.18, 1]}
@@ -365,7 +434,6 @@ function AnatomicalFaceModel({ showMuscles = true }: { showMuscles?: boolean }) 
           color="#A04040"
           fiberDirection="horizontal"
         />
-        {/* Right corrugator */}
         <MuscleWithFibers
           position={[0.45, 0.6, 1.15]}
           scale={[0.5, 0.18, 1]}
@@ -377,7 +445,6 @@ function AnatomicalFaceModel({ showMuscles = true }: { showMuscles?: boolean }) 
 
       {/* ===== ORBICULARIS OCULI (Around eyes) ===== */}
       <group visible={showMuscles}>
-        {/* Left eye orbicularis */}
         <mesh position={[-0.55, 0.35, 1.05]}>
           <torusGeometry args={[0.32, 0.12, 16, 32]} />
           <meshStandardMaterial 
@@ -386,7 +453,6 @@ function AnatomicalFaceModel({ showMuscles = true }: { showMuscles?: boolean }) 
             metalness={0.1}
           />
         </mesh>
-        {/* Right eye orbicularis */}
         <mesh position={[0.55, 0.35, 1.05]}>
           <torusGeometry args={[0.32, 0.12, 16, 32]} />
           <meshStandardMaterial 
@@ -566,7 +632,6 @@ function AnatomicalFaceModel({ showMuscles = true }: { showMuscles?: boolean }) 
 
       {/* ===== EYES (Realistic) ===== */}
       <group>
-        {/* Left eye */}
         <mesh position={[-0.55, 0.35, 1.25]}>
           <sphereGeometry args={[0.15, 32, 32]} />
           <meshStandardMaterial color="#FAFAFA" roughness={0.1} metalness={0.1} />
@@ -580,7 +645,6 @@ function AnatomicalFaceModel({ showMuscles = true }: { showMuscles?: boolean }) 
           <meshStandardMaterial color="#1A1A1A" roughness={0.1} />
         </mesh>
 
-        {/* Right eye */}
         <mesh position={[0.55, 0.35, 1.25]}>
           <sphereGeometry args={[0.15, 32, 32]} />
           <meshStandardMaterial color="#FAFAFA" roughness={0.1} metalness={0.1} />
@@ -701,7 +765,9 @@ export function Face3DViewer({
   onPointClick,
   isLoading = false,
   showLabels = true,
-  showMuscles = true
+  showMuscles = true,
+  showDangerZones = true,
+  safetyZones = []
 }: Face3DViewerProps) {
   const [selectedPointId, setSelectedPointId] = useState<string | null>(null);
 
@@ -744,6 +810,20 @@ export function Face3DViewer({
 
           {/* Anatomical face model */}
           <AnatomicalFaceModel showMuscles={showMuscles} />
+
+          {/* Danger zones */}
+          {showDangerZones && DANGER_ZONES.map((zone) => (
+            zone.positions.map((pos, idx) => (
+              <DangerZoneMesh
+                key={`${zone.id}-${idx}`}
+                center={pos.center}
+                radius={pos.radius}
+                color={zone.color}
+                label={zone.label}
+                reason={zone.reason}
+              />
+            ))
+          ))}
 
           {/* Muscle labels */}
           {showLabels && Object.entries(MUSCLE_DATA).map(([key, data]) => (
@@ -801,8 +881,37 @@ export function Face3DViewer({
             <div className="w-3 h-3 rounded-full bg-violet-500"></div>
             <span className="text-xs text-slate-600">Profundo</span>
           </div>
+          {showDangerZones && (
+            <>
+              <div className="border-t border-slate-200 my-2"></div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full bg-red-500/50 border border-red-500"></div>
+                <span className="text-xs text-slate-600">Zona de Perigo</span>
+              </div>
+            </>
+          )}
         </div>
       </div>
+
+      {/* Danger zones list */}
+      {showDangerZones && (
+        <div className="absolute top-4 right-4 bg-red-50/90 backdrop-blur-sm rounded-lg p-3 shadow-lg border border-red-200 max-w-[200px]">
+          <h4 className="text-xs font-semibold text-red-700 mb-2 flex items-center gap-1">
+            ⚠️ Zonas de Segurança
+          </h4>
+          <div className="space-y-1">
+            {DANGER_ZONES.slice(0, 3).map((zone) => (
+              <div key={zone.id} className="flex items-center gap-2">
+                <div 
+                  className="w-2 h-2 rounded-full" 
+                  style={{ backgroundColor: zone.color }}
+                ></div>
+                <span className="text-xs text-red-600">{zone.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Instructions overlay */}
       <div className="absolute bottom-4 left-4 right-4 flex justify-center">

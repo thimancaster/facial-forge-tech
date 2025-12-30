@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,7 +22,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Search, Edit2, Trash2, User, Calendar, FileText, Loader2 } from "lucide-react";
+import { Search, Edit2, Trash2, User, Calendar, FileText, Loader2, Eye } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
@@ -44,6 +45,7 @@ export function PatientsList({ patients, onRefresh }: PatientsListProps) {
   const [deletingPatient, setDeletingPatient] = useState<Patient | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
+  const navigate = useNavigate();
 
   const [editForm, setEditForm] = useState({
     name: "",
@@ -178,7 +180,17 @@ export function PatientsList({ patients, onRefresh }: PatientsListProps) {
                       variant="outline"
                       size="icon"
                       className="h-8 w-8"
+                      onClick={() => navigate(`/patient/${patient.id}`)}
+                      title="Ver detalhes"
+                    >
+                      <Eye className="w-4 h-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      className="h-8 w-8"
                       onClick={() => openEditDialog(patient)}
+                      title="Editar"
                     >
                       <Edit2 className="w-4 h-4" />
                     </Button>
@@ -187,6 +199,7 @@ export function PatientsList({ patients, onRefresh }: PatientsListProps) {
                       size="icon"
                       className="h-8 w-8 text-destructive hover:text-destructive"
                       onClick={() => setDeletingPatient(patient)}
+                      title="Excluir"
                     >
                       <Trash2 className="w-4 h-4" />
                     </Button>

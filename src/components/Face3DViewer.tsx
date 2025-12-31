@@ -1,6 +1,6 @@
-import { useRef, useState, Suspense, useMemo } from "react";
+import { useRef, useState, Suspense, useMemo, useEffect } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { OrbitControls, Html, Text, Billboard } from "@react-three/drei";
+import { OrbitControls, Html, Text, Billboard, useGLTF, Center } from "@react-three/drei";
 import * as THREE from "three";
 
 export interface InjectionPoint {
@@ -28,6 +28,8 @@ interface Face3DViewerProps {
   showMuscles?: boolean;
   showDangerZones?: boolean;
   safetyZones?: SafetyZone[];
+  useGLBModel?: boolean;
+  modelOpacity?: number;
 }
 
 // Muscle definitions with anatomical data
@@ -166,6 +168,67 @@ function percentTo3D(x: number, y: number): [number, number, number] {
   return [x3d, y3d, z3d];
 }
 
+// GLB Model Component
+function AnatomicalGLBModel({ 
+  opacity = 1.0,
+  showMuscles = true 
+}: { 
+  opacity?: number;
+  showMuscles?: boolean;
+}) {
+  const groupRef = useRef<THREE.Group>(null);
+  const { scene } = useGLTF('/models/face-anatomy.glb');
+  
+  const clonedScene = useMemo(() => {
+    const clone = scene.clone(true);
+    
+    // Apply custom materials and opacity
+    clone.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        if (child.material) {
+          const material = child.material as THREE.MeshStandardMaterial;
+          if (material.clone) {
+            const newMaterial = material.clone();
+            newMaterial.transparent = true;
+            newMaterial.opacity = opacity;
+            newMaterial.side = THREE.DoubleSide;
+            // Enhance muscle visibility
+            if (showMuscles) {
+              newMaterial.roughness = 0.6;
+              newMaterial.metalness = 0.1;
+            }
+            child.material = newMaterial;
+          }
+        }
+      }
+    });
+    
+    return clone;
+  }, [scene, opacity, showMuscles]);
+
+  // Gentle breathing animation
+  useFrame((state) => {
+    if (groupRef.current) {
+      groupRef.current.rotation.y = Math.sin(state.clock.elapsedTime * 0.3) * 0.02;
+    }
+  });
+
+  return (
+    <group ref={groupRef}>
+      <Center>
+        <primitive 
+          object={clonedScene} 
+          scale={2.5}
+          rotation={[0, 0, 0]}
+        />
+      </Center>
+    </group>
+  );
+}
+
+// Preload GLB model
+useGLTF.preload('/models/face-anatomy.glb');
+
 // Danger zone sphere component
 function DangerZoneMesh({ 
   center, 
@@ -277,7 +340,7 @@ function MuscleWithFibers({
   );
 }
 
-// Injection point sphere component
+// Injection point sphere component with diffusion halo
 function InjectionPointMesh({ 
   point, 
   onClick,
@@ -289,9 +352,13 @@ function InjectionPointMesh({
 }) {
   const meshRef = useRef<THREE.Mesh>(null);
   const ringRef = useRef<THREE.Mesh>(null);
+  const haloRef = useRef<THREE.Mesh>(null);
   const [hovered, setHovered] = useState(false);
   const position = percentTo3D(point.x, point.y);
   const muscleLabel = MUSCLE_DATA[point.muscle]?.label || point.muscle;
+
+  // Diffusion radius based on dosage (1-2cm in 3D units)
+  const diffusionRadius = 0.1 + (point.dosage / 20) * 0.15;
 
   useFrame((state) => {
     if (meshRef.current) {
@@ -301,10 +368,25 @@ function InjectionPointMesh({
     if (ringRef.current) {
       ringRef.current.rotation.z = state.clock.elapsedTime * 0.5;
     }
+    if (haloRef.current && haloRef.current.material) {
+      const material = haloRef.current.material as THREE.MeshBasicMaterial;
+      material.opacity = 0.15 + Math.sin(state.clock.elapsedTime * 1.5) * 0.05;
+    }
   });
 
   return (
     <group position={position}>
+      {/* Diffusion halo */}
+      <mesh ref={haloRef}>
+        <sphereGeometry args={[diffusionRadius, 16, 16]} />
+        <meshBasicMaterial 
+          color={point.depth === "deep" ? "#7C3AED" : "#10B981"}
+          transparent
+          opacity={0.15}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+
       {/* Outer glow ring */}
       <mesh ref={ringRef}>
         <ringGeometry args={[0.12, 0.16, 32]} />
@@ -352,6 +434,12 @@ function InjectionPointMesh({
         />
       </mesh>
 
+      {/* Depth vector line */}
+      <mesh position={[0, 0, point.depth === "deep" ? -0.15 : -0.08]} rotation={[Math.PI / 2, 0, 0]}>
+        <cylinderGeometry args={[0.01, 0.01, point.depth === "deep" ? 0.3 : 0.15, 8]} />
+        <meshBasicMaterial color={point.depth === "deep" ? "#7C3AED" : "#10B981"} />
+      </mesh>
+
       {/* Tooltip on hover */}
       {hovered && (
         <Html distanceFactor={8} style={{ pointerEvents: "none" }}>
@@ -373,8 +461,8 @@ function InjectionPointMesh({
   );
 }
 
-// Anatomical face with visible muscles
-function AnatomicalFaceModel({ showMuscles = true }: { showMuscles?: boolean }) {
+// Procedural Anatomical face (fallback if GLB fails)
+function AnatomicalFaceModelProcedural({ showMuscles = true }: { showMuscles?: boolean }) {
   return (
     <group>
       {/* Base skull/skin layer */}
@@ -389,248 +477,74 @@ function AnatomicalFaceModel({ showMuscles = true }: { showMuscles?: boolean }) 
         />
       </mesh>
 
-      {/* ===== FRONTAL MUSCLE (Forehead) ===== */}
+      {/* FRONTAL MUSCLE */}
       <group visible={showMuscles}>
-        <MuscleWithFibers
-          position={[-0.5, 1.3, 0.9]}
-          scale={[0.7, 0.9, 1]}
-          rotation={[-0.3, 0.2, 0]}
-          color="#C06060"
-          fiberDirection="vertical"
-        />
-        <MuscleWithFibers
-          position={[0.5, 1.3, 0.9]}
-          scale={[0.7, 0.9, 1]}
-          rotation={[-0.3, -0.2, 0]}
-          color="#C06060"
-          fiberDirection="vertical"
-        />
-        <MuscleWithFibers
-          position={[0, 1.4, 1.0]}
-          scale={[0.5, 0.7, 1]}
-          rotation={[-0.2, 0, 0]}
-          color="#B85555"
-          fiberDirection="vertical"
-        />
+        <MuscleWithFibers position={[-0.5, 1.3, 0.9]} scale={[0.7, 0.9, 1]} rotation={[-0.3, 0.2, 0]} color="#C06060" fiberDirection="vertical" />
+        <MuscleWithFibers position={[0.5, 1.3, 0.9]} scale={[0.7, 0.9, 1]} rotation={[-0.3, -0.2, 0]} color="#C06060" fiberDirection="vertical" />
+        <MuscleWithFibers position={[0, 1.4, 1.0]} scale={[0.5, 0.7, 1]} rotation={[-0.2, 0, 0]} color="#B85555" fiberDirection="vertical" />
       </group>
 
-      {/* ===== PROCERUS MUSCLE (Between eyebrows) ===== */}
+      {/* PROCERUS MUSCLE */}
       <group visible={showMuscles}>
-        <MuscleWithFibers
-          position={[0, 0.65, 1.25]}
-          scale={[0.25, 0.45, 1]}
-          rotation={[-0.1, 0, 0]}
-          color="#B85450"
-          fiberDirection="vertical"
-        />
+        <MuscleWithFibers position={[0, 0.65, 1.25]} scale={[0.25, 0.45, 1]} rotation={[-0.1, 0, 0]} color="#B85450" fiberDirection="vertical" />
       </group>
 
-      {/* ===== CORRUGATOR MUSCLES (Eyebrows) ===== */}
+      {/* CORRUGATOR MUSCLES */}
       <group visible={showMuscles}>
-        <MuscleWithFibers
-          position={[-0.45, 0.6, 1.15]}
-          scale={[0.5, 0.18, 1]}
-          rotation={[0, 0.3, 0.15]}
-          color="#A04040"
-          fiberDirection="horizontal"
-        />
-        <MuscleWithFibers
-          position={[0.45, 0.6, 1.15]}
-          scale={[0.5, 0.18, 1]}
-          rotation={[0, -0.3, -0.15]}
-          color="#A04040"
-          fiberDirection="horizontal"
-        />
+        <MuscleWithFibers position={[-0.45, 0.6, 1.15]} scale={[0.5, 0.18, 1]} rotation={[0, 0.3, 0.15]} color="#A04040" fiberDirection="horizontal" />
+        <MuscleWithFibers position={[0.45, 0.6, 1.15]} scale={[0.5, 0.18, 1]} rotation={[0, -0.3, -0.15]} color="#A04040" fiberDirection="horizontal" />
       </group>
 
-      {/* ===== ORBICULARIS OCULI (Around eyes) ===== */}
+      {/* ORBICULARIS OCULI */}
       <group visible={showMuscles}>
         <mesh position={[-0.55, 0.35, 1.05]}>
           <torusGeometry args={[0.32, 0.12, 16, 32]} />
-          <meshStandardMaterial 
-            color="#9F5050"
-            roughness={0.7}
-            metalness={0.1}
-          />
+          <meshStandardMaterial color="#9F5050" roughness={0.7} metalness={0.1} />
         </mesh>
         <mesh position={[0.55, 0.35, 1.05]}>
           <torusGeometry args={[0.32, 0.12, 16, 32]} />
-          <meshStandardMaterial 
-            color="#9F5050"
-            roughness={0.7}
-            metalness={0.1}
-          />
+          <meshStandardMaterial color="#9F5050" roughness={0.7} metalness={0.1} />
         </mesh>
       </group>
 
-      {/* ===== NASALIS (Nose) ===== */}
+      {/* NASALIS */}
       <group visible={showMuscles}>
-        <MuscleWithFibers
-          position={[-0.12, 0.05, 1.45]}
-          scale={[0.15, 0.35, 1]}
-          rotation={[0, 0.2, 0]}
-          color="#B06060"
-          fiberDirection="vertical"
-        />
-        <MuscleWithFibers
-          position={[0.12, 0.05, 1.45]}
-          scale={[0.15, 0.35, 1]}
-          rotation={[0, -0.2, 0]}
-          color="#B06060"
-          fiberDirection="vertical"
-        />
+        <MuscleWithFibers position={[-0.12, 0.05, 1.45]} scale={[0.15, 0.35, 1]} rotation={[0, 0.2, 0]} color="#B06060" fiberDirection="vertical" />
+        <MuscleWithFibers position={[0.12, 0.05, 1.45]} scale={[0.15, 0.35, 1]} rotation={[0, -0.2, 0]} color="#B06060" fiberDirection="vertical" />
       </group>
 
-      {/* ===== LEVATOR LABII (Upper lip lifter) ===== */}
+      {/* LEVATOR LABII */}
       <group visible={showMuscles}>
-        <MuscleWithFibers
-          position={[-0.35, -0.15, 1.3]}
-          scale={[0.2, 0.4, 1]}
-          rotation={[0, 0.15, 0.1]}
-          color="#A85555"
-          fiberDirection="vertical"
-        />
-        <MuscleWithFibers
-          position={[0.35, -0.15, 1.3]}
-          scale={[0.2, 0.4, 1]}
-          rotation={[0, -0.15, -0.1]}
-          color="#A85555"
-          fiberDirection="vertical"
-        />
+        <MuscleWithFibers position={[-0.35, -0.15, 1.3]} scale={[0.2, 0.4, 1]} rotation={[0, 0.15, 0.1]} color="#A85555" fiberDirection="vertical" />
+        <MuscleWithFibers position={[0.35, -0.15, 1.3]} scale={[0.2, 0.4, 1]} rotation={[0, -0.15, -0.1]} color="#A85555" fiberDirection="vertical" />
       </group>
 
-      {/* ===== ZYGOMATICUS MAJOR (Smile muscle) ===== */}
+      {/* ZYGOMATICUS MAJOR */}
       <group visible={showMuscles}>
-        <MuscleWithFibers
-          position={[-0.7, -0.2, 1.0]}
-          scale={[0.55, 0.18, 1]}
-          rotation={[0, 0.4, 0.5]}
-          color="#AA5858"
-          fiberDirection="horizontal"
-        />
-        <MuscleWithFibers
-          position={[0.7, -0.2, 1.0]}
-          scale={[0.55, 0.18, 1]}
-          rotation={[0, -0.4, -0.5]}
-          color="#AA5858"
-          fiberDirection="horizontal"
-        />
+        <MuscleWithFibers position={[-0.7, -0.2, 1.0]} scale={[0.55, 0.18, 1]} rotation={[0, 0.4, 0.5]} color="#AA5858" fiberDirection="horizontal" />
+        <MuscleWithFibers position={[0.7, -0.2, 1.0]} scale={[0.55, 0.18, 1]} rotation={[0, -0.4, -0.5]} color="#AA5858" fiberDirection="horizontal" />
       </group>
 
-      {/* ===== ZYGOMATICUS MINOR ===== */}
-      <group visible={showMuscles}>
-        <MuscleWithFibers
-          position={[-0.55, -0.05, 1.15]}
-          scale={[0.35, 0.12, 1]}
-          rotation={[0, 0.3, 0.3]}
-          color="#A55252"
-          fiberDirection="horizontal"
-        />
-        <MuscleWithFibers
-          position={[0.55, -0.05, 1.15]}
-          scale={[0.35, 0.12, 1]}
-          rotation={[0, -0.3, -0.3]}
-          color="#A55252"
-          fiberDirection="horizontal"
-        />
-      </group>
-
-      {/* ===== ORBICULARIS ORIS (Around mouth) ===== */}
+      {/* ORBICULARIS ORIS */}
       <group visible={showMuscles}>
         <mesh position={[0, -0.55, 1.35]}>
           <torusGeometry args={[0.22, 0.1, 16, 32]} />
-          <meshStandardMaterial 
-            color="#B06565"
-            roughness={0.65}
-            metalness={0.1}
-          />
+          <meshStandardMaterial color="#B06565" roughness={0.65} metalness={0.1} />
         </mesh>
       </group>
 
-      {/* ===== DEPRESSOR ANGULI ORIS ===== */}
+      {/* MENTALIS */}
       <group visible={showMuscles}>
-        <MuscleWithFibers
-          position={[-0.4, -0.75, 1.15]}
-          scale={[0.2, 0.35, 1]}
-          rotation={[0, 0.2, -0.2]}
-          color="#9A4848"
-          fiberDirection="vertical"
-        />
-        <MuscleWithFibers
-          position={[0.4, -0.75, 1.15]}
-          scale={[0.2, 0.35, 1]}
-          rotation={[0, -0.2, 0.2]}
-          color="#9A4848"
-          fiberDirection="vertical"
-        />
+        <MuscleWithFibers position={[0, -1.0, 1.1]} scale={[0.35, 0.35, 1]} rotation={[-0.2, 0, 0]} color="#A55050" fiberDirection="vertical" />
       </group>
 
-      {/* ===== MENTALIS (Chin) ===== */}
+      {/* MASSETER */}
       <group visible={showMuscles}>
-        <MuscleWithFibers
-          position={[0, -1.0, 1.1]}
-          scale={[0.35, 0.35, 1]}
-          rotation={[-0.2, 0, 0]}
-          color="#A55050"
-          fiberDirection="vertical"
-        />
+        <MuscleWithFibers position={[-0.95, -0.4, 0.6]} scale={[0.4, 0.6, 1]} rotation={[0, 0.5, 0]} color="#8B4545" fiberDirection="vertical" />
+        <MuscleWithFibers position={[0.95, -0.4, 0.6]} scale={[0.4, 0.6, 1]} rotation={[0, -0.5, 0]} color="#8B4545" fiberDirection="vertical" />
       </group>
 
-      {/* ===== MASSETER (Jaw) ===== */}
-      <group visible={showMuscles}>
-        <MuscleWithFibers
-          position={[-0.95, -0.4, 0.6]}
-          scale={[0.4, 0.6, 1]}
-          rotation={[0, 0.5, 0]}
-          color="#8B4545"
-          fiberDirection="vertical"
-        />
-        <MuscleWithFibers
-          position={[0.95, -0.4, 0.6]}
-          scale={[0.4, 0.6, 1]}
-          rotation={[0, -0.5, 0]}
-          color="#8B4545"
-          fiberDirection="vertical"
-        />
-      </group>
-
-      {/* ===== BUCCINATOR (Cheek) ===== */}
-      <group visible={showMuscles}>
-        <MuscleWithFibers
-          position={[-0.75, -0.45, 0.9]}
-          scale={[0.35, 0.5, 1]}
-          rotation={[0, 0.4, 0]}
-          color="#A35050"
-          fiberDirection="horizontal"
-        />
-        <MuscleWithFibers
-          position={[0.75, -0.45, 0.9]}
-          scale={[0.35, 0.5, 1]}
-          rotation={[0, -0.4, 0]}
-          color="#A35050"
-          fiberDirection="horizontal"
-        />
-      </group>
-
-      {/* ===== RISORIUS ===== */}
-      <group visible={showMuscles}>
-        <MuscleWithFibers
-          position={[-0.65, -0.55, 1.0]}
-          scale={[0.4, 0.1, 1]}
-          rotation={[0, 0.3, 0.1]}
-          color="#9E4E4E"
-          fiberDirection="horizontal"
-        />
-        <MuscleWithFibers
-          position={[0.65, -0.55, 1.0]}
-          scale={[0.4, 0.1, 1]}
-          rotation={[0, -0.3, -0.1]}
-          color="#9E4E4E"
-          fiberDirection="horizontal"
-        />
-      </group>
-
-      {/* ===== EYES (Realistic) ===== */}
+      {/* EYES */}
       <group>
         <mesh position={[-0.55, 0.35, 1.25]}>
           <sphereGeometry args={[0.15, 32, 32]} />
@@ -644,7 +558,6 @@ function AnatomicalFaceModel({ showMuscles = true }: { showMuscles?: boolean }) 
           <sphereGeometry args={[0.04, 16, 16]} />
           <meshStandardMaterial color="#1A1A1A" roughness={0.1} />
         </mesh>
-
         <mesh position={[0.55, 0.35, 1.25]}>
           <sphereGeometry args={[0.15, 32, 32]} />
           <meshStandardMaterial color="#FAFAFA" roughness={0.1} metalness={0.1} />
@@ -659,47 +572,16 @@ function AnatomicalFaceModel({ showMuscles = true }: { showMuscles?: boolean }) 
         </mesh>
       </group>
 
-      {/* ===== NOSE TIP (Skin colored) ===== */}
+      {/* NOSE */}
       <mesh position={[0, -0.15, 1.55]}>
         <sphereGeometry args={[0.15, 24, 24]} />
-        <meshStandardMaterial 
-          color="#E8D0C0"
-          roughness={0.7}
-          metalness={0.0}
-        />
+        <meshStandardMaterial color="#E8D0C0" roughness={0.7} metalness={0.0} />
       </mesh>
 
-      {/* ===== LIPS (Skin colored) ===== */}
+      {/* LIPS */}
       <mesh position={[0, -0.55, 1.5]}>
         <sphereGeometry args={[0.12, 24, 24]} />
-        <meshStandardMaterial 
-          color="#C9908A"
-          roughness={0.5}
-          metalness={0.1}
-        />
-      </mesh>
-
-      {/* ===== EARS (Simplified) ===== */}
-      <mesh position={[-1.4, 0.1, 0]} rotation={[0, 0.3, 0]}>
-        <torusGeometry args={[0.25, 0.08, 8, 16, Math.PI]} />
-        <meshStandardMaterial color="#E5D0C0" roughness={0.8} />
-      </mesh>
-      <mesh position={[1.4, 0.1, 0]} rotation={[0, -0.3, 0]}>
-        <torusGeometry args={[0.25, 0.08, 8, 16, Math.PI]} />
-        <meshStandardMaterial color="#E5D0C0" roughness={0.8} />
-      </mesh>
-
-      {/* ===== CONNECTIVE TISSUE / FASCIA (Semi-transparent overlay) ===== */}
-      <mesh position={[0, 0.2, 0.8]}>
-        <sphereGeometry args={[1.65, 48, 48]} />
-        <meshStandardMaterial 
-          color="#F0E0D5"
-          roughness={0.9}
-          metalness={0.0}
-          transparent
-          opacity={0.15}
-          side={THREE.BackSide}
-        />
+        <meshStandardMaterial color="#C9908A" roughness={0.5} metalness={0.1} />
       </mesh>
     </group>
   );
@@ -726,7 +608,6 @@ function MuscleLabel({
         anchorY="middle"
         outlineWidth={0.015}
         outlineColor="#FFFFFF"
-        font="/fonts/inter-medium.woff"
       >
         {text}
       </Text>
@@ -759,6 +640,122 @@ function LoadingIndicator() {
   );
 }
 
+// GLB Loading fallback
+function GLBLoadingFallback() {
+  return (
+    <group>
+      <mesh>
+        <sphereGeometry args={[1.5, 32, 32]} />
+        <meshStandardMaterial color="#F5E6D3" transparent opacity={0.5} wireframe />
+      </mesh>
+      <Html center>
+        <div className="text-slate-600 text-sm animate-pulse">
+          Carregando modelo 3D...
+        </div>
+      </Html>
+    </group>
+  );
+}
+
+// Scene content with model selection
+function SceneContent({
+  useGLBModel,
+  showMuscles,
+  showLabels,
+  showDangerZones,
+  modelOpacity,
+  injectionPoints,
+  isLoading,
+  selectedPointId,
+  onPointClick
+}: {
+  useGLBModel: boolean;
+  showMuscles: boolean;
+  showLabels: boolean;
+  showDangerZones: boolean;
+  modelOpacity: number;
+  injectionPoints: InjectionPoint[];
+  isLoading: boolean;
+  selectedPointId: string | null;
+  onPointClick: (point: InjectionPoint) => void;
+}) {
+  const [glbError, setGlbError] = useState(false);
+
+  return (
+    <>
+      {/* Premium lighting setup */}
+      <ambientLight intensity={0.5} />
+      <directionalLight position={[3, 4, 5]} intensity={0.9} castShadow shadow-mapSize={[1024, 1024]} />
+      <directionalLight position={[-3, 2, 4]} intensity={0.5} />
+      <directionalLight position={[0, -2, 3]} intensity={0.3} />
+      <pointLight position={[-3, 0, -1]} intensity={0.4} color="#FFE4C4" />
+      <pointLight position={[3, 0, -1]} intensity={0.4} color="#FFE4C4" />
+      <spotLight position={[0, 5, 3]} intensity={0.6} angle={0.5} penumbra={0.5} color="#FFFFFF" />
+
+      {/* Anatomical face model - GLB or Procedural */}
+      {useGLBModel && !glbError ? (
+        <Suspense fallback={<GLBLoadingFallback />}>
+          <AnatomicalGLBModel opacity={modelOpacity} showMuscles={showMuscles} />
+        </Suspense>
+      ) : (
+        <AnatomicalFaceModelProcedural showMuscles={showMuscles} />
+      )}
+
+      {/* Danger zones */}
+      {showDangerZones && DANGER_ZONES.map((zone) => (
+        zone.positions.map((pos, idx) => (
+          <DangerZoneMesh
+            key={`${zone.id}-${idx}`}
+            center={pos.center}
+            radius={pos.radius}
+            color={zone.color}
+            label={zone.label}
+            reason={zone.reason}
+          />
+        ))
+      ))}
+
+      {/* Muscle labels - only show for procedural model */}
+      {showLabels && !useGLBModel && Object.entries(MUSCLE_DATA).map(([key, data]) => (
+        <MuscleLabel 
+          key={key}
+          text={data.label}
+          position={data.labelPosition}
+          visible={showMuscles}
+        />
+      ))}
+
+      {/* Injection points */}
+      {injectionPoints.map((point) => (
+        <InjectionPointMesh
+          key={point.id}
+          point={point}
+          onClick={() => onPointClick(point)}
+          isSelected={selectedPointId === point.id}
+        />
+      ))}
+
+      {/* Loading indicator */}
+      {isLoading && <LoadingIndicator />}
+
+      {/* Controls */}
+      <OrbitControls
+        enablePan={true}
+        panSpeed={0.5}
+        minDistance={3}
+        maxDistance={10}
+        minPolarAngle={Math.PI / 6}
+        maxPolarAngle={Math.PI * 5 / 6}
+        minAzimuthAngle={-Math.PI / 2}
+        maxAzimuthAngle={Math.PI / 2}
+        enableDamping
+        dampingFactor={0.05}
+        rotateSpeed={0.5}
+      />
+    </>
+  );
+}
+
 // Main component
 export function Face3DViewer({ 
   injectionPoints, 
@@ -767,7 +764,9 @@ export function Face3DViewer({
   showLabels = true,
   showMuscles = true,
   showDangerZones = true,
-  safetyZones = []
+  safetyZones = [],
+  useGLBModel = true,
+  modelOpacity = 1.0
 }: Face3DViewerProps) {
   const [selectedPointId, setSelectedPointId] = useState<string | null>(null);
 
@@ -784,86 +783,26 @@ export function Face3DViewer({
         dpr={[1, 2]}
       >
         <Suspense fallback={null}>
-          {/* Premium lighting setup */}
-          <ambientLight intensity={0.5} />
-          <directionalLight 
-            position={[3, 4, 5]} 
-            intensity={0.9} 
-            castShadow 
-            shadow-mapSize={[1024, 1024]}
-          />
-          <directionalLight position={[-3, 2, 4]} intensity={0.5} />
-          <directionalLight position={[0, -2, 3]} intensity={0.3} />
-          
-          {/* Rim lights for depth */}
-          <pointLight position={[-3, 0, -1]} intensity={0.4} color="#FFE4C4" />
-          <pointLight position={[3, 0, -1]} intensity={0.4} color="#FFE4C4" />
-          
-          {/* Top highlight */}
-          <spotLight 
-            position={[0, 5, 3]} 
-            intensity={0.6} 
-            angle={0.5} 
-            penumbra={0.5}
-            color="#FFFFFF"
-          />
-
-          {/* Anatomical face model */}
-          <AnatomicalFaceModel showMuscles={showMuscles} />
-
-          {/* Danger zones */}
-          {showDangerZones && DANGER_ZONES.map((zone) => (
-            zone.positions.map((pos, idx) => (
-              <DangerZoneMesh
-                key={`${zone.id}-${idx}`}
-                center={pos.center}
-                radius={pos.radius}
-                color={zone.color}
-                label={zone.label}
-                reason={zone.reason}
-              />
-            ))
-          ))}
-
-          {/* Muscle labels */}
-          {showLabels && Object.entries(MUSCLE_DATA).map(([key, data]) => (
-            <MuscleLabel 
-              key={key}
-              text={data.label}
-              position={data.labelPosition}
-              visible={showMuscles}
-            />
-          ))}
-
-          {/* Injection points */}
-          {injectionPoints.map((point) => (
-            <InjectionPointMesh
-              key={point.id}
-              point={point}
-              onClick={() => handlePointClick(point)}
-              isSelected={selectedPointId === point.id}
-            />
-          ))}
-
-          {/* Loading indicator */}
-          {isLoading && <LoadingIndicator />}
-
-          {/* Controls */}
-          <OrbitControls
-            enablePan={true}
-            panSpeed={0.5}
-            minDistance={3}
-            maxDistance={10}
-            minPolarAngle={Math.PI / 6}
-            maxPolarAngle={Math.PI * 5 / 6}
-            minAzimuthAngle={-Math.PI / 2}
-            maxAzimuthAngle={Math.PI / 2}
-            enableDamping
-            dampingFactor={0.05}
-            rotateSpeed={0.5}
+          <SceneContent
+            useGLBModel={useGLBModel}
+            showMuscles={showMuscles}
+            showLabels={showLabels}
+            showDangerZones={showDangerZones}
+            modelOpacity={modelOpacity}
+            injectionPoints={injectionPoints}
+            isLoading={isLoading}
+            selectedPointId={selectedPointId}
+            onPointClick={handlePointClick}
           />
         </Suspense>
       </Canvas>
+
+      {/* Model selector badge */}
+      <div className="absolute top-4 right-[220px] bg-white/90 backdrop-blur-sm rounded-lg px-3 py-1.5 shadow-lg border border-slate-200">
+        <span className="text-xs font-medium text-slate-700">
+          {useGLBModel ? "🧬 Modelo GLB" : "📐 Modelo Procedural"}
+        </span>
+      </div>
 
       {/* Legend */}
       <div className="absolute top-4 left-4 bg-white/90 backdrop-blur-sm rounded-lg p-3 shadow-lg border border-slate-200">

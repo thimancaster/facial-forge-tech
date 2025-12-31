@@ -1,1 +1,2 @@
-project_id = "lzkuidkvkkkmnkbuggff"
+[functions.analyze-face]
+verify_jwt = false

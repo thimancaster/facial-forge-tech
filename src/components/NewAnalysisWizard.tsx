@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Upload, ArrowLeft, ArrowRight, Check, User, Camera, Crosshair, Loader2, FolderOpen, X, Sparkles, Brain, Eye, Tag, FileDown, Settings2 } from "lucide-react";
+import { Upload, ArrowLeft, ArrowRight, Check, User, Camera, Crosshair, Loader2, FolderOpen, X, Sparkles, Brain, Eye, Tag, FileDown, Settings2, MousePointer, Image } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { CameraCapture, PhotoType } from "./CameraCapture";
@@ -15,7 +15,7 @@ import { Face3DViewer, InjectionPoint } from "./Face3DViewer";
 import { DosageSafetyAlert } from "./DosageSafetyAlert";
 import { ProductSelector, TOXIN_PRODUCTS } from "./ProductSelector";
 import { TreatmentTemplates } from "./TreatmentTemplates";
-import { exportAnalysisPdf } from "@/lib/exportPdf";
+import { exportAnalysisPdf, exportWithMapPdf } from "@/lib/exportPdf";
 
 interface PatientData {
   name: string;
@@ -101,6 +101,10 @@ export function NewAnalysisWizard() {
   const [showMuscles, setShowMuscles] = useState(true);
   const [showLabels, setShowLabels] = useState(true);
   const [showDangerZones, setShowDangerZones] = useState(true);
+  const [isEditMode, setIsEditMode] = useState(false);
+  
+  // Ref for 3D viewer container (for screenshot export)
+  const viewer3DRef = useRef<HTMLDivElement>(null);
   
   // Temporary photo URLs for preview and AI analysis
   const [photoUrls, setPhotoUrls] = useState<Record<PhotoType, string | null>>({
@@ -319,6 +323,59 @@ export function NewAnalysisWizard() {
     }, {} as Record<string, number>);
   }, [aiAnalysis]);
 
+  // Handler to add new injection point via click on 3D model
+  const handleAddPoint = useCallback((pointData: Omit<InjectionPoint, 'id'>) => {
+    if (!aiAnalysis) return;
+    
+    const newPoint: InjectionPoint = {
+      ...pointData,
+      id: `manual_${Date.now()}`,
+      dosage: Math.round(4 * conversionFactor), // Use current conversion factor
+    };
+    
+    const updatedPoints = [...aiAnalysis.injectionPoints, newPoint];
+    
+    // Recalculate totals
+    const procerusTotal = updatedPoints
+      .filter(p => p.muscle === "procerus")
+      .reduce((sum, p) => sum + p.dosage, 0);
+    
+    const corrugatorTotal = updatedPoints
+      .filter(p => p.muscle.startsWith("corrugator"))
+      .reduce((sum, p) => sum + p.dosage, 0);
+
+    const frontalisTotal = updatedPoints
+      .filter(p => p.muscle === "frontalis")
+      .reduce((sum, p) => sum + p.dosage, 0);
+
+    const orbicularisTotal = updatedPoints
+      .filter(p => p.muscle.startsWith("orbicularis_oculi"))
+      .reduce((sum, p) => sum + p.dosage, 0);
+    
+    const total = procerusTotal + corrugatorTotal + frontalisTotal + orbicularisTotal + 
+      updatedPoints.filter(p => !["procerus", "frontalis"].includes(p.muscle) && 
+        !p.muscle.startsWith("corrugator") && 
+        !p.muscle.startsWith("orbicularis_oculi"))
+        .reduce((sum, p) => sum + p.dosage, 0);
+    
+    setAiAnalysis({
+      ...aiAnalysis,
+      injectionPoints: updatedPoints,
+      totalDosage: {
+        procerus: procerusTotal,
+        corrugator: corrugatorTotal,
+        frontalis: frontalisTotal,
+        orbicularis_oculi: orbicularisTotal,
+        total
+      }
+    });
+
+    toast({
+      title: "Ponto adicionado!",
+      description: `Novo ponto no ${pointData.muscle} com ${newPoint.dosage}U`,
+    });
+  }, [aiAnalysis, conversionFactor, toast]);
+
   const handleExportPdf = async () => {
     if (!aiAnalysis) return;
     
@@ -340,7 +397,7 @@ export function NewAnalysisWizard() {
         }
       }
 
-      await exportAnalysisPdf({
+      const exportData = {
         patient: patientData,
         injectionPoints: aiAnalysis.injectionPoints,
         totalDosage: aiAnalysis.totalDosage,
@@ -348,10 +405,62 @@ export function NewAnalysisWizard() {
         confidence: aiAnalysis.confidence,
         doctorName,
         clinicName,
-      });
+        productType: TOXIN_PRODUCTS.find(p => p.id === selectedProduct)?.name,
+        conversionFactor,
+      };
+
+      await exportAnalysisPdf(exportData);
 
       toast({
         title: "PDF exportado!",
+        description: "O arquivo foi salvo na pasta de downloads.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Erro ao exportar",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleExportPdfWith3D = async () => {
+    if (!aiAnalysis || !viewer3DRef.current) return;
+    
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      let doctorName = "";
+      let clinicName = "";
+      
+      if (user) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("full_name, clinic_name")
+          .eq("user_id", user.id)
+          .single();
+        
+        if (profile) {
+          doctorName = profile.full_name || "";
+          clinicName = profile.clinic_name || "";
+        }
+      }
+
+      const exportData = {
+        patient: patientData,
+        injectionPoints: aiAnalysis.injectionPoints,
+        totalDosage: aiAnalysis.totalDosage,
+        clinicalNotes: aiAnalysis.clinicalNotes,
+        confidence: aiAnalysis.confidence,
+        doctorName,
+        clinicName,
+        productType: TOXIN_PRODUCTS.find(p => p.id === selectedProduct)?.name,
+        conversionFactor,
+      };
+
+      await exportWithMapPdf(exportData, viewer3DRef.current);
+
+      toast({
+        title: "PDF com Mapa 3D exportado!",
         description: "O arquivo foi salvo na pasta de downloads.",
       });
     } catch (error: any) {
@@ -796,6 +905,17 @@ export function NewAnalysisWizard() {
                   <div className="flex items-center gap-4 flex-wrap">
                     <div className="flex items-center gap-2">
                       <Switch
+                        id="edit-mode"
+                        checked={isEditMode}
+                        onCheckedChange={setIsEditMode}
+                      />
+                      <Label htmlFor="edit-mode" className="text-xs flex items-center gap-1 cursor-pointer text-amber-600">
+                        <MousePointer className="w-3.5 h-3.5" />
+                        Editar
+                      </Label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Switch
                         id="show-muscles"
                         checked={showMuscles}
                         onCheckedChange={setShowMuscles}
@@ -828,16 +948,24 @@ export function NewAnalysisWizard() {
                     </div>
                   </div>
                 </div>
+                {isEditMode && (
+                  <p className="text-xs text-amber-600 mt-2 bg-amber-50 rounded px-3 py-1.5 border border-amber-200">
+                    💡 Clique no modelo 3D para adicionar novos pontos de injeção. Dosagem base: {Math.round(4 * conversionFactor)}U ({TOXIN_PRODUCTS.find(p => p.id === selectedProduct)?.name})
+                  </p>
+                )}
               </CardHeader>
               <CardContent className="p-2">
-                <div className="h-[500px] relative">
+                <div ref={viewer3DRef} className="h-[500px] relative">
                   <Face3DViewer
                     injectionPoints={aiAnalysis.injectionPoints}
                     onPointClick={setSelectedPoint}
+                    onAddPoint={handleAddPoint}
                     showMuscles={showMuscles}
                     showLabels={showLabels}
                     showDangerZones={showDangerZones}
                     safetyZones={aiAnalysis.safetyZones}
+                    conversionFactor={conversionFactor}
+                    isEditMode={isEditMode}
                   />
                 </div>
               </CardContent>
@@ -985,10 +1113,14 @@ export function NewAnalysisWizard() {
               <ArrowLeft className="w-4 h-4 mr-2" />
               Voltar
             </Button>
-            <div className="flex gap-3">
+            <div className="flex gap-2 flex-wrap">
               <Button variant="outline" onClick={handleExportPdf}>
                 <FileDown className="w-4 h-4 mr-2" />
-                Exportar PDF
+                PDF Simples
+              </Button>
+              <Button variant="outline" onClick={handleExportPdfWith3D} className="border-primary/50 text-primary hover:bg-primary/10">
+                <Image className="w-4 h-4 mr-2" />
+                PDF com Mapa 3D
               </Button>
               <Button onClick={handleSaveAnalysis} disabled={isLoading} size="lg" className="bg-gradient-to-r from-primary to-accent hover:opacity-90">
                 {isLoading ? (

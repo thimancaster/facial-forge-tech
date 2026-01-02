@@ -443,25 +443,129 @@ function MuscleWithFibers({
   );
 }
 
-// Injection point sphere component with diffusion halo
+// Enhanced Diffusion Halo with gradient and time animation
+function DiffusionHalo({ 
+  dosage, 
+  depth, 
+  isSelected 
+}: { 
+  dosage: number; 
+  depth: "superficial" | "deep";
+  isSelected?: boolean;
+}) {
+  const innerHaloRef = useRef<THREE.Mesh>(null);
+  const outerHaloRef = useRef<THREE.Mesh>(null);
+  const waveRef = useRef<THREE.Mesh>(null);
+  
+  // Diffusion radius based on dosage (1-2cm in 3D units) - more realistic medical diffusion
+  const baseRadius = 0.08 + (dosage / 25) * 0.12;
+  const innerRadius = baseRadius * 0.6;
+  const outerRadius = baseRadius * 1.4;
+  
+  // Colors based on depth
+  const innerColor = depth === "deep" ? "#7C3AED" : "#10B981";
+  const outerColor = depth === "deep" ? "#A855F7" : "#34D399";
+
+  useFrame((state) => {
+    const time = state.clock.elapsedTime;
+    
+    // Inner halo - subtle pulsing
+    if (innerHaloRef.current && innerHaloRef.current.material) {
+      const material = innerHaloRef.current.material as THREE.MeshBasicMaterial;
+      material.opacity = 0.25 + Math.sin(time * 2) * 0.08;
+      innerHaloRef.current.scale.setScalar(1 + Math.sin(time * 1.5) * 0.05);
+    }
+    
+    // Outer halo - slower pulse
+    if (outerHaloRef.current && outerHaloRef.current.material) {
+      const material = outerHaloRef.current.material as THREE.MeshBasicMaterial;
+      material.opacity = 0.12 + Math.sin(time * 1.2) * 0.04;
+      outerHaloRef.current.scale.setScalar(1 + Math.sin(time * 0.8) * 0.08);
+    }
+    
+    // Wave effect - expanding ring (simulating toxin diffusion over time)
+    if (waveRef.current) {
+      const waveScale = ((time % 3) / 3) * 1.5 + 0.5;
+      waveRef.current.scale.setScalar(waveScale);
+      if (waveRef.current.material) {
+        const material = waveRef.current.material as THREE.MeshBasicMaterial;
+        material.opacity = Math.max(0, 0.3 - ((time % 3) / 3) * 0.3);
+      }
+    }
+  });
+
+  return (
+    <group>
+      {/* Inner diffusion zone - high concentration */}
+      <mesh ref={innerHaloRef}>
+        <sphereGeometry args={[innerRadius, 24, 24]} />
+        <meshBasicMaterial 
+          color={innerColor}
+          transparent
+          opacity={0.25}
+          side={THREE.DoubleSide}
+          depthWrite={false}
+        />
+      </mesh>
+
+      {/* Outer diffusion zone - lower concentration */}
+      <mesh ref={outerHaloRef}>
+        <sphereGeometry args={[outerRadius, 24, 24]} />
+        <meshBasicMaterial 
+          color={outerColor}
+          transparent
+          opacity={0.12}
+          side={THREE.DoubleSide}
+          depthWrite={false}
+        />
+      </mesh>
+
+      {/* Expanding wave effect - simulates diffusion propagation */}
+      <mesh ref={waveRef}>
+        <ringGeometry args={[innerRadius * 0.9, innerRadius * 1.1, 32]} />
+        <meshBasicMaterial 
+          color={innerColor}
+          transparent
+          opacity={0.2}
+          side={THREE.DoubleSide}
+          depthWrite={false}
+        />
+      </mesh>
+
+      {/* Selected state - additional glow */}
+      {isSelected && (
+        <mesh>
+          <sphereGeometry args={[outerRadius * 1.2, 16, 16]} />
+          <meshBasicMaterial 
+            color="#FFD700"
+            transparent
+            opacity={0.15}
+            side={THREE.DoubleSide}
+            depthWrite={false}
+          />
+        </mesh>
+      )}
+    </group>
+  );
+}
+
+// Injection point sphere component with enhanced diffusion visualization
 function InjectionPointMesh({ 
   point, 
   onClick,
-  isSelected 
+  isSelected,
+  showDiffusion = true
 }: { 
   point: InjectionPoint; 
   onClick?: () => void;
   isSelected?: boolean;
+  showDiffusion?: boolean;
 }) {
   const meshRef = useRef<THREE.Mesh>(null);
   const ringRef = useRef<THREE.Mesh>(null);
-  const haloRef = useRef<THREE.Mesh>(null);
   const [hovered, setHovered] = useState(false);
   const position = percentTo3D(point.x, point.y);
   const muscleLabel = MUSCLE_DATA[point.muscle]?.label || point.muscle;
-
-  // Diffusion radius based on dosage (1-2cm in 3D units)
-  const diffusionRadius = 0.1 + (point.dosage / 20) * 0.15;
 
   useFrame((state) => {
     if (meshRef.current) {
@@ -471,24 +575,18 @@ function InjectionPointMesh({
     if (ringRef.current) {
       ringRef.current.rotation.z = state.clock.elapsedTime * 0.5;
     }
-    if (haloRef.current && haloRef.current.material) {
-      const material = haloRef.current.material as THREE.MeshBasicMaterial;
-      material.opacity = 0.15 + Math.sin(state.clock.elapsedTime * 1.5) * 0.05;
-    }
   });
 
   return (
     <group position={position}>
-      {/* Diffusion halo */}
-      <mesh ref={haloRef}>
-        <sphereGeometry args={[diffusionRadius, 16, 16]} />
-        <meshBasicMaterial 
-          color={point.depth === "deep" ? "#7C3AED" : "#10B981"}
-          transparent
-          opacity={0.15}
-          side={THREE.DoubleSide}
+      {/* Enhanced Diffusion Simulation */}
+      {showDiffusion && (
+        <DiffusionHalo 
+          dosage={point.dosage} 
+          depth={point.depth} 
+          isSelected={isSelected}
         />
-      </mesh>
+      )}
 
       {/* Outer glow ring */}
       <mesh ref={ringRef}>
@@ -543,6 +641,20 @@ function InjectionPointMesh({
         <meshBasicMaterial color={point.depth === "deep" ? "#7C3AED" : "#10B981"} />
       </mesh>
 
+      {/* Dosage indicator text */}
+      <Billboard position={[0, 0.18, 0]} follow={true}>
+        <Text
+          fontSize={0.06}
+          color="#FFFFFF"
+          anchorX="center"
+          anchorY="middle"
+          outlineWidth={0.008}
+          outlineColor="#000000"
+        >
+          {point.dosage}U
+        </Text>
+      </Billboard>
+
       {/* Tooltip on hover */}
       {hovered && (
         <Html distanceFactor={8} style={{ pointerEvents: "none" }}>
@@ -556,7 +668,10 @@ function InjectionPointMesh({
                 {point.depth === "deep" ? "Profundo" : "Superficial"}
               </span>
             </div>
-            {point.notes && <p className="text-xs text-slate-400 mt-2 border-t border-slate-700 pt-2">{point.notes}</p>}
+            <div className="text-xs text-slate-400 mt-2 border-t border-slate-700 pt-2">
+              <p>Difusão: ~{Math.round(0.8 + (point.dosage / 25) * 1.2)}cm</p>
+              {point.notes && <p className="mt-1">{point.notes}</p>}
+            </div>
           </div>
         </Html>
       )}

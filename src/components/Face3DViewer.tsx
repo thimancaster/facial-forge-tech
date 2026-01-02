@@ -1,7 +1,12 @@
-import { useRef, useState, Suspense, useMemo, useEffect } from "react";
-import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { useRef, useState, Suspense, useMemo, useEffect, useCallback } from "react";
+import { Canvas, useFrame, useThree, ThreeEvent } from "@react-three/fiber";
 import { OrbitControls, Html, Text, Billboard, useGLTF, Center } from "@react-three/drei";
 import * as THREE from "three";
+import { Slider } from "@/components/ui/slider";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import { Eye, EyeOff, Layers, MousePointer, Plus, RotateCcw, Bone, CircleDot } from "lucide-react";
 
 export interface InjectionPoint {
   id: string;
@@ -23,6 +28,7 @@ interface Face3DViewerProps {
   injectionPoints: InjectionPoint[];
   onPointClick?: (point: InjectionPoint) => void;
   onPointDosageChange?: (pointId: string, newDosage: number) => void;
+  onAddPoint?: (point: Omit<InjectionPoint, 'id'>) => void;
   isLoading?: boolean;
   showLabels?: boolean;
   showMuscles?: boolean;
@@ -30,6 +36,15 @@ interface Face3DViewerProps {
   safetyZones?: SafetyZone[];
   useGLBModel?: boolean;
   modelOpacity?: number;
+  conversionFactor?: number;
+  isEditMode?: boolean;
+}
+
+// Layer visibility configuration
+interface LayerConfig {
+  skin: { visible: boolean; opacity: number };
+  muscles: { visible: boolean; opacity: number };
+  bone: { visible: boolean; opacity: number };
 }
 
 // Muscle definitions with anatomical data
@@ -168,13 +183,45 @@ function percentTo3D(x: number, y: number): [number, number, number] {
   return [x3d, y3d, z3d];
 }
 
-// GLB Model Component
+// Convert 3D coordinates back to percentage
+function threeDToPercent(x3d: number, y3d: number): { x: number; y: number } {
+  const x = ((x3d / 1.4) * 50) + 50;
+  const y = 50 - ((y3d - 0.2) / 1.8) * 50;
+  return { x: Math.round(x), y: Math.round(y) };
+}
+
+// Detect muscle from 3D position
+function detectMuscleFromPosition(x3d: number, y3d: number): string {
+  // Glabelar region (center upper face)
+  if (y3d > 0.5 && y3d < 0.9 && Math.abs(x3d) < 0.15) return "procerus";
+  if (y3d > 0.4 && y3d < 0.8 && x3d < -0.2 && x3d > -0.8) return "corrugator_left";
+  if (y3d > 0.4 && y3d < 0.8 && x3d > 0.2 && x3d < 0.8) return "corrugator_right";
+  
+  // Forehead
+  if (y3d > 1.0) return "frontalis";
+  
+  // Periorbital
+  if (y3d > 0.1 && y3d < 0.6 && x3d < -0.4) return "orbicularis_oculi_left";
+  if (y3d > 0.1 && y3d < 0.6 && x3d > 0.4) return "orbicularis_oculi_right";
+  
+  // Nasal
+  if (y3d > -0.2 && y3d < 0.3 && Math.abs(x3d) < 0.3) return "nasalis";
+  
+  // Perioral
+  if (y3d > -0.8 && y3d < -0.3) return "orbicularis_oris";
+  
+  // Mentalis
+  if (y3d < -0.8) return "mentalis";
+  
+  // Default
+  return "procerus";
+}
+
+// GLB Model Component with layer support
 function AnatomicalGLBModel({ 
-  opacity = 1.0,
-  showMuscles = true 
+  layers,
 }: { 
-  opacity?: number;
-  showMuscles?: boolean;
+  layers: LayerConfig;
 }) {
   const groupRef = useRef<THREE.Group>(null);
   const { scene } = useGLTF('/models/face-anatomy.glb');
@@ -182,7 +229,7 @@ function AnatomicalGLBModel({
   const clonedScene = useMemo(() => {
     const clone = scene.clone(true);
     
-    // Apply custom materials and opacity
+    // Apply custom materials and opacity based on layers
     clone.traverse((child) => {
       if (child instanceof THREE.Mesh) {
         if (child.material) {
@@ -190,13 +237,26 @@ function AnatomicalGLBModel({
           if (material.clone) {
             const newMaterial = material.clone();
             newMaterial.transparent = true;
-            newMaterial.opacity = opacity;
             newMaterial.side = THREE.DoubleSide;
-            // Enhance muscle visibility
-            if (showMuscles) {
+            
+            // Determine layer type by mesh name or position
+            const meshName = child.name.toLowerCase();
+            
+            if (meshName.includes('skin') || meshName.includes('face')) {
+              newMaterial.opacity = layers.skin.visible ? layers.skin.opacity : 0;
+            } else if (meshName.includes('muscle') || meshName.includes('musc')) {
+              newMaterial.opacity = layers.muscles.visible ? layers.muscles.opacity : 0;
+              newMaterial.roughness = 0.6;
+              newMaterial.metalness = 0.1;
+            } else if (meshName.includes('bone') || meshName.includes('skull')) {
+              newMaterial.opacity = layers.bone.visible ? layers.bone.opacity : 0;
+            } else {
+              // Default: treat as muscle layer
+              newMaterial.opacity = layers.muscles.visible ? layers.muscles.opacity : 0;
               newMaterial.roughness = 0.6;
               newMaterial.metalness = 0.1;
             }
+            
             child.material = newMaterial;
           }
         }
@@ -204,7 +264,7 @@ function AnatomicalGLBModel({
     });
     
     return clone;
-  }, [scene, opacity, showMuscles]);
+  }, [scene, layers]);
 
   // Gentle breathing animation
   useFrame((state) => {
@@ -228,6 +288,45 @@ function AnatomicalGLBModel({
 
 // Preload GLB model
 useGLTF.preload('/models/face-anatomy.glb');
+
+// Clickable surface for raycasting
+function ClickableSurface({ 
+  onSurfaceClick, 
+  isEditMode 
+}: { 
+  onSurfaceClick: (point: THREE.Vector3) => void;
+  isEditMode: boolean;
+}) {
+  const meshRef = useRef<THREE.Mesh>(null);
+  const { camera, raycaster, pointer } = useThree();
+
+  const handleClick = useCallback((event: ThreeEvent<MouseEvent>) => {
+    if (!isEditMode) return;
+    event.stopPropagation();
+    
+    // Get intersection point
+    const point = event.point;
+    onSurfaceClick(point);
+  }, [isEditMode, onSurfaceClick]);
+
+  return (
+    <mesh 
+      ref={meshRef}
+      onClick={handleClick}
+      visible={isEditMode}
+    >
+      {/* Invisible sphere for raycasting - matches face shape */}
+      <sphereGeometry args={[1.8, 64, 64]} />
+      <meshBasicMaterial 
+        color="#00FF00" 
+        transparent 
+        opacity={isEditMode ? 0.05 : 0} 
+        side={THREE.FrontSide}
+        depthWrite={false}
+      />
+    </mesh>
+  );
+}
 
 // Danger zone sphere component
 function DangerZoneMesh({ 
@@ -299,13 +398,15 @@ function MuscleWithFibers({
   scale,
   rotation,
   color,
-  fiberDirection = "vertical"
+  fiberDirection = "vertical",
+  opacity = 1
 }: {
   position: [number, number, number];
   scale: [number, number, number];
   rotation?: [number, number, number];
   color: string;
   fiberDirection?: "vertical" | "horizontal" | "diagonal";
+  opacity?: number;
 }) {
   const meshRef = useRef<THREE.Mesh>(null);
   
@@ -317,12 +418,12 @@ function MuscleWithFibers({
       lines.push(
         <mesh key={i} position={[fiberDirection === "horizontal" ? 0 : offset, fiberDirection === "horizontal" ? offset : 0, 0.01]}>
           <planeGeometry args={[fiberDirection === "horizontal" ? 0.95 : 0.02, fiberDirection === "horizontal" ? 0.02 : 0.95]} />
-          <meshBasicMaterial color="#FFFFFF" transparent opacity={0.08} />
+          <meshBasicMaterial color="#FFFFFF" transparent opacity={0.08 * opacity} />
         </mesh>
       );
     }
     return lines;
-  }, [fiberDirection]);
+  }, [fiberDirection, opacity]);
 
   return (
     <group position={position} rotation={rotation || [0, 0, 0]} scale={scale}>
@@ -333,6 +434,8 @@ function MuscleWithFibers({
           roughness={0.65}
           metalness={0.05}
           side={THREE.DoubleSide}
+          transparent
+          opacity={opacity}
         />
       </mesh>
       {fibers}
@@ -462,90 +565,93 @@ function InjectionPointMesh({
 }
 
 // Procedural Anatomical face (fallback if GLB fails)
-function AnatomicalFaceModelProcedural({ showMuscles = true }: { showMuscles?: boolean }) {
+function AnatomicalFaceModelProcedural({ layers }: { layers: LayerConfig }) {
+  const muscleOpacity = layers.muscles.visible ? layers.muscles.opacity : 0;
+  const skinOpacity = layers.skin.visible ? layers.skin.opacity : 0;
+  
   return (
     <group>
       {/* Base skull/skin layer */}
-      <mesh position={[0, 0, -0.1]}>
+      <mesh position={[0, 0, -0.1]} visible={layers.skin.visible || layers.bone.visible}>
         <sphereGeometry args={[1.7, 64, 64]} />
         <meshStandardMaterial 
-          color="#F5E6D3"
+          color={layers.bone.visible ? "#E8DDD0" : "#F5E6D3"}
           roughness={0.8}
           metalness={0.0}
           transparent
-          opacity={0.3}
+          opacity={layers.bone.visible ? layers.bone.opacity * 0.5 : skinOpacity * 0.3}
         />
       </mesh>
 
       {/* FRONTAL MUSCLE */}
-      <group visible={showMuscles}>
-        <MuscleWithFibers position={[-0.5, 1.3, 0.9]} scale={[0.7, 0.9, 1]} rotation={[-0.3, 0.2, 0]} color="#C06060" fiberDirection="vertical" />
-        <MuscleWithFibers position={[0.5, 1.3, 0.9]} scale={[0.7, 0.9, 1]} rotation={[-0.3, -0.2, 0]} color="#C06060" fiberDirection="vertical" />
-        <MuscleWithFibers position={[0, 1.4, 1.0]} scale={[0.5, 0.7, 1]} rotation={[-0.2, 0, 0]} color="#B85555" fiberDirection="vertical" />
+      <group visible={layers.muscles.visible}>
+        <MuscleWithFibers position={[-0.5, 1.3, 0.9]} scale={[0.7, 0.9, 1]} rotation={[-0.3, 0.2, 0]} color="#C06060" fiberDirection="vertical" opacity={muscleOpacity} />
+        <MuscleWithFibers position={[0.5, 1.3, 0.9]} scale={[0.7, 0.9, 1]} rotation={[-0.3, -0.2, 0]} color="#C06060" fiberDirection="vertical" opacity={muscleOpacity} />
+        <MuscleWithFibers position={[0, 1.4, 1.0]} scale={[0.5, 0.7, 1]} rotation={[-0.2, 0, 0]} color="#B85555" fiberDirection="vertical" opacity={muscleOpacity} />
       </group>
 
       {/* PROCERUS MUSCLE */}
-      <group visible={showMuscles}>
-        <MuscleWithFibers position={[0, 0.65, 1.25]} scale={[0.25, 0.45, 1]} rotation={[-0.1, 0, 0]} color="#B85450" fiberDirection="vertical" />
+      <group visible={layers.muscles.visible}>
+        <MuscleWithFibers position={[0, 0.65, 1.25]} scale={[0.25, 0.45, 1]} rotation={[-0.1, 0, 0]} color="#B85450" fiberDirection="vertical" opacity={muscleOpacity} />
       </group>
 
       {/* CORRUGATOR MUSCLES */}
-      <group visible={showMuscles}>
-        <MuscleWithFibers position={[-0.45, 0.6, 1.15]} scale={[0.5, 0.18, 1]} rotation={[0, 0.3, 0.15]} color="#A04040" fiberDirection="horizontal" />
-        <MuscleWithFibers position={[0.45, 0.6, 1.15]} scale={[0.5, 0.18, 1]} rotation={[0, -0.3, -0.15]} color="#A04040" fiberDirection="horizontal" />
+      <group visible={layers.muscles.visible}>
+        <MuscleWithFibers position={[-0.45, 0.6, 1.15]} scale={[0.5, 0.18, 1]} rotation={[0, 0.3, 0.15]} color="#A04040" fiberDirection="horizontal" opacity={muscleOpacity} />
+        <MuscleWithFibers position={[0.45, 0.6, 1.15]} scale={[0.5, 0.18, 1]} rotation={[0, -0.3, -0.15]} color="#A04040" fiberDirection="horizontal" opacity={muscleOpacity} />
       </group>
 
       {/* ORBICULARIS OCULI */}
-      <group visible={showMuscles}>
+      <group visible={layers.muscles.visible}>
         <mesh position={[-0.55, 0.35, 1.05]}>
           <torusGeometry args={[0.32, 0.12, 16, 32]} />
-          <meshStandardMaterial color="#9F5050" roughness={0.7} metalness={0.1} />
+          <meshStandardMaterial color="#9F5050" roughness={0.7} metalness={0.1} transparent opacity={muscleOpacity} />
         </mesh>
         <mesh position={[0.55, 0.35, 1.05]}>
           <torusGeometry args={[0.32, 0.12, 16, 32]} />
-          <meshStandardMaterial color="#9F5050" roughness={0.7} metalness={0.1} />
+          <meshStandardMaterial color="#9F5050" roughness={0.7} metalness={0.1} transparent opacity={muscleOpacity} />
         </mesh>
       </group>
 
       {/* NASALIS */}
-      <group visible={showMuscles}>
-        <MuscleWithFibers position={[-0.12, 0.05, 1.45]} scale={[0.15, 0.35, 1]} rotation={[0, 0.2, 0]} color="#B06060" fiberDirection="vertical" />
-        <MuscleWithFibers position={[0.12, 0.05, 1.45]} scale={[0.15, 0.35, 1]} rotation={[0, -0.2, 0]} color="#B06060" fiberDirection="vertical" />
+      <group visible={layers.muscles.visible}>
+        <MuscleWithFibers position={[-0.12, 0.05, 1.45]} scale={[0.15, 0.35, 1]} rotation={[0, 0.2, 0]} color="#B06060" fiberDirection="vertical" opacity={muscleOpacity} />
+        <MuscleWithFibers position={[0.12, 0.05, 1.45]} scale={[0.15, 0.35, 1]} rotation={[0, -0.2, 0]} color="#B06060" fiberDirection="vertical" opacity={muscleOpacity} />
       </group>
 
       {/* LEVATOR LABII */}
-      <group visible={showMuscles}>
-        <MuscleWithFibers position={[-0.35, -0.15, 1.3]} scale={[0.2, 0.4, 1]} rotation={[0, 0.15, 0.1]} color="#A85555" fiberDirection="vertical" />
-        <MuscleWithFibers position={[0.35, -0.15, 1.3]} scale={[0.2, 0.4, 1]} rotation={[0, -0.15, -0.1]} color="#A85555" fiberDirection="vertical" />
+      <group visible={layers.muscles.visible}>
+        <MuscleWithFibers position={[-0.35, -0.15, 1.3]} scale={[0.2, 0.4, 1]} rotation={[0, 0.15, 0.1]} color="#A85555" fiberDirection="vertical" opacity={muscleOpacity} />
+        <MuscleWithFibers position={[0.35, -0.15, 1.3]} scale={[0.2, 0.4, 1]} rotation={[0, -0.15, -0.1]} color="#A85555" fiberDirection="vertical" opacity={muscleOpacity} />
       </group>
 
       {/* ZYGOMATICUS MAJOR */}
-      <group visible={showMuscles}>
-        <MuscleWithFibers position={[-0.7, -0.2, 1.0]} scale={[0.55, 0.18, 1]} rotation={[0, 0.4, 0.5]} color="#AA5858" fiberDirection="horizontal" />
-        <MuscleWithFibers position={[0.7, -0.2, 1.0]} scale={[0.55, 0.18, 1]} rotation={[0, -0.4, -0.5]} color="#AA5858" fiberDirection="horizontal" />
+      <group visible={layers.muscles.visible}>
+        <MuscleWithFibers position={[-0.7, -0.2, 1.0]} scale={[0.55, 0.18, 1]} rotation={[0, 0.4, 0.5]} color="#AA5858" fiberDirection="horizontal" opacity={muscleOpacity} />
+        <MuscleWithFibers position={[0.7, -0.2, 1.0]} scale={[0.55, 0.18, 1]} rotation={[0, -0.4, -0.5]} color="#AA5858" fiberDirection="horizontal" opacity={muscleOpacity} />
       </group>
 
       {/* ORBICULARIS ORIS */}
-      <group visible={showMuscles}>
+      <group visible={layers.muscles.visible}>
         <mesh position={[0, -0.55, 1.35]}>
           <torusGeometry args={[0.22, 0.1, 16, 32]} />
-          <meshStandardMaterial color="#B06565" roughness={0.65} metalness={0.1} />
+          <meshStandardMaterial color="#B06565" roughness={0.65} metalness={0.1} transparent opacity={muscleOpacity} />
         </mesh>
       </group>
 
       {/* MENTALIS */}
-      <group visible={showMuscles}>
-        <MuscleWithFibers position={[0, -1.0, 1.1]} scale={[0.35, 0.35, 1]} rotation={[-0.2, 0, 0]} color="#A55050" fiberDirection="vertical" />
+      <group visible={layers.muscles.visible}>
+        <MuscleWithFibers position={[0, -1.0, 1.1]} scale={[0.35, 0.35, 1]} rotation={[-0.2, 0, 0]} color="#A55050" fiberDirection="vertical" opacity={muscleOpacity} />
       </group>
 
       {/* MASSETER */}
-      <group visible={showMuscles}>
-        <MuscleWithFibers position={[-0.95, -0.4, 0.6]} scale={[0.4, 0.6, 1]} rotation={[0, 0.5, 0]} color="#8B4545" fiberDirection="vertical" />
-        <MuscleWithFibers position={[0.95, -0.4, 0.6]} scale={[0.4, 0.6, 1]} rotation={[0, -0.5, 0]} color="#8B4545" fiberDirection="vertical" />
+      <group visible={layers.muscles.visible}>
+        <MuscleWithFibers position={[-0.95, -0.4, 0.6]} scale={[0.4, 0.6, 1]} rotation={[0, 0.5, 0]} color="#8B4545" fiberDirection="vertical" opacity={muscleOpacity} />
+        <MuscleWithFibers position={[0.95, -0.4, 0.6]} scale={[0.4, 0.6, 1]} rotation={[0, -0.5, 0]} color="#8B4545" fiberDirection="vertical" opacity={muscleOpacity} />
       </group>
 
       {/* EYES */}
-      <group>
+      <group visible={layers.skin.visible}>
         <mesh position={[-0.55, 0.35, 1.25]}>
           <sphereGeometry args={[0.15, 32, 32]} />
           <meshStandardMaterial color="#FAFAFA" roughness={0.1} metalness={0.1} />
@@ -573,15 +679,15 @@ function AnatomicalFaceModelProcedural({ showMuscles = true }: { showMuscles?: b
       </group>
 
       {/* NOSE */}
-      <mesh position={[0, -0.15, 1.55]}>
+      <mesh position={[0, -0.15, 1.55]} visible={layers.skin.visible}>
         <sphereGeometry args={[0.15, 24, 24]} />
-        <meshStandardMaterial color="#E8D0C0" roughness={0.7} metalness={0.0} />
+        <meshStandardMaterial color="#E8D0C0" roughness={0.7} metalness={0.0} transparent opacity={skinOpacity} />
       </mesh>
 
       {/* LIPS */}
-      <mesh position={[0, -0.55, 1.5]}>
+      <mesh position={[0, -0.55, 1.5]} visible={layers.skin.visible}>
         <sphereGeometry args={[0.12, 24, 24]} />
-        <meshStandardMaterial color="#C9908A" roughness={0.5} metalness={0.1} />
+        <meshStandardMaterial color="#C9908A" roughness={0.5} metalness={0.1} transparent opacity={skinOpacity} />
       </mesh>
     </group>
   );
@@ -660,24 +766,26 @@ function GLBLoadingFallback() {
 // Scene content with model selection
 function SceneContent({
   useGLBModel,
-  showMuscles,
+  layers,
   showLabels,
   showDangerZones,
-  modelOpacity,
   injectionPoints,
   isLoading,
   selectedPointId,
-  onPointClick
+  onPointClick,
+  onSurfaceClick,
+  isEditMode
 }: {
   useGLBModel: boolean;
-  showMuscles: boolean;
+  layers: LayerConfig;
   showLabels: boolean;
   showDangerZones: boolean;
-  modelOpacity: number;
   injectionPoints: InjectionPoint[];
   isLoading: boolean;
   selectedPointId: string | null;
   onPointClick: (point: InjectionPoint) => void;
+  onSurfaceClick: (point: THREE.Vector3) => void;
+  isEditMode: boolean;
 }) {
   const [glbError, setGlbError] = useState(false);
 
@@ -692,13 +800,16 @@ function SceneContent({
       <pointLight position={[3, 0, -1]} intensity={0.4} color="#FFE4C4" />
       <spotLight position={[0, 5, 3]} intensity={0.6} angle={0.5} penumbra={0.5} color="#FFFFFF" />
 
+      {/* Clickable surface for adding points */}
+      <ClickableSurface onSurfaceClick={onSurfaceClick} isEditMode={isEditMode} />
+
       {/* Anatomical face model - GLB or Procedural */}
       {useGLBModel && !glbError ? (
         <Suspense fallback={<GLBLoadingFallback />}>
-          <AnatomicalGLBModel opacity={modelOpacity} showMuscles={showMuscles} />
+          <AnatomicalGLBModel layers={layers} />
         </Suspense>
       ) : (
-        <AnatomicalFaceModelProcedural showMuscles={showMuscles} />
+        <AnatomicalFaceModelProcedural layers={layers} />
       )}
 
       {/* Danger zones */}
@@ -721,7 +832,7 @@ function SceneContent({
           key={key}
           text={data.label}
           position={data.labelPosition}
-          visible={showMuscles}
+          visible={layers.muscles.visible}
         />
       ))}
 
@@ -756,24 +867,212 @@ function SceneContent({
   );
 }
 
+// Layer Control Panel Component
+function LayerControlPanel({
+  layers,
+  onLayerChange,
+  isEditMode,
+  onEditModeChange,
+  useGLBModel,
+  onModelChange
+}: {
+  layers: LayerConfig;
+  onLayerChange: (layers: LayerConfig) => void;
+  isEditMode: boolean;
+  onEditModeChange: (mode: boolean) => void;
+  useGLBModel: boolean;
+  onModelChange: (useGLB: boolean) => void;
+}) {
+  return (
+    <div className="absolute top-4 left-4 bg-white/95 backdrop-blur-sm rounded-xl p-4 shadow-xl border border-slate-200 w-[220px] space-y-4">
+      <div className="flex items-center gap-2 pb-2 border-b border-slate-200">
+        <Layers className="w-4 h-4 text-primary" />
+        <h4 className="text-sm font-semibold text-slate-700">Camadas</h4>
+      </div>
+
+      {/* Model Toggle */}
+      <div className="flex items-center justify-between">
+        <Label htmlFor="model-toggle" className="text-xs text-slate-600 flex items-center gap-1.5">
+          <CircleDot className="w-3 h-3" />
+          Modelo GLB
+        </Label>
+        <Switch
+          id="model-toggle"
+          checked={useGLBModel}
+          onCheckedChange={onModelChange}
+        />
+      </div>
+
+      {/* Skin Layer */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <Label htmlFor="skin-toggle" className="text-xs text-slate-600 flex items-center gap-1.5">
+            {layers.skin.visible ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+            Pele
+          </Label>
+          <Switch
+            id="skin-toggle"
+            checked={layers.skin.visible}
+            onCheckedChange={(checked) => onLayerChange({
+              ...layers,
+              skin: { ...layers.skin, visible: checked }
+            })}
+          />
+        </div>
+        {layers.skin.visible && (
+          <Slider
+            value={[layers.skin.opacity * 100]}
+            onValueChange={([val]) => onLayerChange({
+              ...layers,
+              skin: { ...layers.skin, opacity: val / 100 }
+            })}
+            max={100}
+            step={5}
+            className="w-full"
+          />
+        )}
+      </div>
+
+      {/* Muscles Layer */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <Label htmlFor="muscles-toggle" className="text-xs text-slate-600 flex items-center gap-1.5">
+            {layers.muscles.visible ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
+            Músculos
+          </Label>
+          <Switch
+            id="muscles-toggle"
+            checked={layers.muscles.visible}
+            onCheckedChange={(checked) => onLayerChange({
+              ...layers,
+              muscles: { ...layers.muscles, visible: checked }
+            })}
+          />
+        </div>
+        {layers.muscles.visible && (
+          <Slider
+            value={[layers.muscles.opacity * 100]}
+            onValueChange={([val]) => onLayerChange({
+              ...layers,
+              muscles: { ...layers.muscles, opacity: val / 100 }
+            })}
+            max={100}
+            step={5}
+            className="w-full"
+          />
+        )}
+      </div>
+
+      {/* Bone Layer */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <Label htmlFor="bone-toggle" className="text-xs text-slate-600 flex items-center gap-1.5">
+            <Bone className="w-3 h-3" />
+            Osso
+          </Label>
+          <Switch
+            id="bone-toggle"
+            checked={layers.bone.visible}
+            onCheckedChange={(checked) => onLayerChange({
+              ...layers,
+              bone: { ...layers.bone, visible: checked }
+            })}
+          />
+        </div>
+        {layers.bone.visible && (
+          <Slider
+            value={[layers.bone.opacity * 100]}
+            onValueChange={([val]) => onLayerChange({
+              ...layers,
+              bone: { ...layers.bone, opacity: val / 100 }
+            })}
+            max={100}
+            step={5}
+            className="w-full"
+          />
+        )}
+      </div>
+
+      {/* Divider */}
+      <div className="border-t border-slate-200 pt-3">
+        <div className="flex items-center justify-between">
+          <Label htmlFor="edit-mode" className="text-xs text-slate-600 flex items-center gap-1.5">
+            <MousePointer className="w-3 h-3" />
+            Modo Edição
+          </Label>
+          <Switch
+            id="edit-mode"
+            checked={isEditMode}
+            onCheckedChange={onEditModeChange}
+          />
+        </div>
+        {isEditMode && (
+          <p className="text-[10px] text-amber-600 mt-1.5 bg-amber-50 rounded px-2 py-1">
+            Clique no modelo para adicionar pontos
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // Main component
 export function Face3DViewer({ 
   injectionPoints, 
   onPointClick,
+  onAddPoint,
   isLoading = false,
   showLabels = true,
   showMuscles = true,
   showDangerZones = true,
   safetyZones = [],
-  useGLBModel = true,
-  modelOpacity = 1.0
+  useGLBModel: initialUseGLB = true,
+  modelOpacity = 1.0,
+  conversionFactor = 1.0,
+  isEditMode: externalEditMode
 }: Face3DViewerProps) {
   const [selectedPointId, setSelectedPointId] = useState<string | null>(null);
+  const [internalEditMode, setInternalEditMode] = useState(false);
+  const [useGLBModel, setUseGLBModel] = useState(initialUseGLB);
+  
+  const isEditMode = externalEditMode !== undefined ? externalEditMode : internalEditMode;
+
+  const [layers, setLayers] = useState<LayerConfig>({
+    skin: { visible: true, opacity: 0.3 },
+    muscles: { visible: showMuscles, opacity: modelOpacity },
+    bone: { visible: false, opacity: 0.5 }
+  });
+
+  // Sync external props with internal state
+  useEffect(() => {
+    setLayers(prev => ({
+      ...prev,
+      muscles: { ...prev.muscles, visible: showMuscles, opacity: modelOpacity }
+    }));
+  }, [showMuscles, modelOpacity]);
 
   const handlePointClick = (point: InjectionPoint) => {
     setSelectedPointId(point.id);
     onPointClick?.(point);
   };
+
+  const handleSurfaceClick = useCallback((point3D: THREE.Vector3) => {
+    if (!isEditMode || !onAddPoint) return;
+    
+    const { x, y } = threeDToPercent(point3D.x, point3D.y);
+    const muscle = detectMuscleFromPosition(point3D.x, point3D.y);
+    
+    const newPoint: Omit<InjectionPoint, 'id'> = {
+      muscle,
+      x,
+      y,
+      depth: "superficial",
+      dosage: Math.round(4 * conversionFactor),
+      notes: "Ponto adicionado manualmente"
+    };
+    
+    onAddPoint(newPoint);
+  }, [isEditMode, onAddPoint, conversionFactor]);
 
   return (
     <div className="w-full h-full min-h-[500px] bg-gradient-to-br from-slate-100 via-slate-50 to-slate-100 rounded-xl overflow-hidden relative">
@@ -785,27 +1084,61 @@ export function Face3DViewer({
         <Suspense fallback={null}>
           <SceneContent
             useGLBModel={useGLBModel}
-            showMuscles={showMuscles}
+            layers={layers}
             showLabels={showLabels}
             showDangerZones={showDangerZones}
-            modelOpacity={modelOpacity}
             injectionPoints={injectionPoints}
             isLoading={isLoading}
             selectedPointId={selectedPointId}
             onPointClick={handlePointClick}
+            onSurfaceClick={handleSurfaceClick}
+            isEditMode={isEditMode}
           />
         </Suspense>
       </Canvas>
 
-      {/* Model selector badge */}
-      <div className="absolute top-4 right-[220px] bg-white/90 backdrop-blur-sm rounded-lg px-3 py-1.5 shadow-lg border border-slate-200">
-        <span className="text-xs font-medium text-slate-700">
-          {useGLBModel ? "🧬 Modelo GLB" : "📐 Modelo Procedural"}
-        </span>
-      </div>
+      {/* Layer Control Panel */}
+      <LayerControlPanel
+        layers={layers}
+        onLayerChange={setLayers}
+        isEditMode={internalEditMode}
+        onEditModeChange={setInternalEditMode}
+        useGLBModel={useGLBModel}
+        onModelChange={setUseGLBModel}
+      />
+
+      {/* Danger zones panel */}
+      {showDangerZones && (
+        <div className="absolute top-4 right-4 bg-red-50/90 backdrop-blur-sm rounded-lg p-3 shadow-lg border border-red-200 max-w-[200px]">
+          <h4 className="text-xs font-semibold text-red-700 mb-2 flex items-center gap-1">
+            ⚠️ Zonas de Segurança
+          </h4>
+          <div className="space-y-1">
+            {DANGER_ZONES.slice(0, 3).map((zone) => (
+              <div key={zone.id} className="flex items-center gap-2">
+                <div 
+                  className="w-2 h-2 rounded-full" 
+                  style={{ backgroundColor: zone.color }}
+                ></div>
+                <span className="text-xs text-red-600">{zone.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Edit mode indicator */}
+      {isEditMode && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-amber-500/90 backdrop-blur-sm rounded-full px-4 py-2 shadow-lg">
+          <div className="flex items-center gap-2 text-white text-sm font-medium">
+            <Plus className="w-4 h-4" />
+            Clique para adicionar ponto
+          </div>
+        </div>
+      )}
 
       {/* Legend */}
-      <div className="absolute top-4 left-4 bg-white/90 backdrop-blur-sm rounded-lg p-3 shadow-lg border border-slate-200">
+      <div className="absolute bottom-20 right-4 bg-white/90 backdrop-blur-sm rounded-lg p-3 shadow-lg border border-slate-200">
         <h4 className="text-xs font-semibold text-slate-700 mb-2">Legenda</h4>
         <div className="space-y-1.5">
           <div className="flex items-center gap-2">
@@ -831,26 +1164,6 @@ export function Face3DViewer({
           )}
         </div>
       </div>
-
-      {/* Danger zones list */}
-      {showDangerZones && (
-        <div className="absolute top-4 right-4 bg-red-50/90 backdrop-blur-sm rounded-lg p-3 shadow-lg border border-red-200 max-w-[200px]">
-          <h4 className="text-xs font-semibold text-red-700 mb-2 flex items-center gap-1">
-            ⚠️ Zonas de Segurança
-          </h4>
-          <div className="space-y-1">
-            {DANGER_ZONES.slice(0, 3).map((zone) => (
-              <div key={zone.id} className="flex items-center gap-2">
-                <div 
-                  className="w-2 h-2 rounded-full" 
-                  style={{ backgroundColor: zone.color }}
-                ></div>
-                <span className="text-xs text-red-600">{zone.label}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Instructions overlay */}
       <div className="absolute bottom-4 left-4 right-4 flex justify-center">

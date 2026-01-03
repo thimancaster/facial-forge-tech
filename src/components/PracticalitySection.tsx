@@ -19,7 +19,7 @@ export const PracticalitySection = () => {
             <div className="aspect-[4/5] rounded-2xl overflow-hidden border border-primary/20 shadow-xl relative">
               <div className="absolute inset-0 bg-gradient-to-br from-primary/20 via-transparent to-accent/20" />
               <img 
-                src="/placeholder.svg" 
+                src="https://images.unsplash.com/photo-1576091160550-2173dba999ef?w=800&q=80" 
                 alt="Análise Facial com Overlay Anatômico"
                 className="w-full h-full object-cover"
               />

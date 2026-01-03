@@ -101,9 +101,9 @@ export const HeroSection = () => {
                 <div className="absolute inset-0 bg-gradient-to-br from-accent/30 via-transparent to-primary/30 mix-blend-overlay" />
                 <div className="absolute top-0 right-0 w-64 h-64 bg-accent/20 rounded-full blur-3xl" />
                 
-                {/* Placeholder image */}
+                {/* Professional aesthetic medical image */}
                 <img 
-                  src="/placeholder.svg" 
+                  src="https://images.unsplash.com/photo-1612349317150-e413f6a5b16d?w=800&q=80" 
                   alt="Análise Facial Profissional"
                   className="w-full h-full object-cover"
                 />

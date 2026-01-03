@@ -229,10 +229,15 @@ function ComparisonPage() {
 }
 
 function NewAnalysisPage() {
+  const searchParams = new URLSearchParams(window.location.search);
+  const patientId = searchParams.get('patientId');
+  
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-light text-foreground">Nova Análise Facial</h1>
-      <NewAnalysisWizard />
+      <h1 className="text-2xl font-light text-foreground">
+        {patientId ? 'Nova Consulta' : 'Nova Análise Facial'}
+      </h1>
+      <NewAnalysisWizard initialPatientId={patientId || undefined} />
     </div>
   );
 }

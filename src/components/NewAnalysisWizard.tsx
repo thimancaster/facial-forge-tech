@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useCallback } from "react";
+import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -65,11 +65,16 @@ const PHOTO_TYPES: { key: PhotoType; label: string; desc: string; required: bool
   { key: "profile_right", label: "Perfil Direito", desc: "Virado para esquerda", required: false },
 ];
 
-export function NewAnalysisWizard() {
-  const [step, setStep] = useState(1);
+interface NewAnalysisWizardProps {
+  initialPatientId?: string;
+}
+
+export function NewAnalysisWizard({ initialPatientId }: NewAnalysisWizardProps) {
+  const [step, setStep] = useState(initialPatientId ? 2 : 1); // Skip patient step if pre-selected
   const [isLoading, setIsLoading] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [cameraOpen, setCameraOpen] = useState<PhotoType | null>(null);
+  const [existingPatientId, setExistingPatientId] = useState<string | null>(initialPatientId || null);
   const { toast } = useToast();
   
   const [patientData, setPatientData] = useState<PatientData>({
@@ -78,6 +83,40 @@ export function NewAnalysisWizard() {
     observations: "",
     gender: "feminino",
   });
+  
+  // Load existing patient data if initialPatientId is provided
+  useEffect(() => {
+    if (initialPatientId) {
+      loadExistingPatient(initialPatientId);
+    }
+  }, [initialPatientId]);
+  
+  const loadExistingPatient = async (patientId: string) => {
+    try {
+      const { data: patient, error } = await supabase
+        .from('patients')
+        .select('*')
+        .eq('id', patientId)
+        .maybeSingle();
+      
+      if (error) throw error;
+      if (patient) {
+        setPatientData({
+          name: patient.name,
+          age: patient.age?.toString() || "",
+          observations: patient.observations || "",
+          gender: patient.gender || "feminino",
+        });
+        setExistingPatientId(patient.id);
+        toast({
+          title: `Paciente: ${patient.name}`,
+          description: "Dados carregados. Configure o tratamento.",
+        });
+      }
+    } catch (err) {
+      console.error('Error loading patient:', err);
+    }
+  };
   
   const [photos, setPhotos] = useState<PhotoData>({
     resting: null,
@@ -478,23 +517,30 @@ export function NewAnalysisWizard() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Usuário não autenticado");
 
-      const { data: patient, error: patientError } = await supabase
-        .from('patients')
-        .insert({
-          user_id: user.id,
-          name: patientData.name,
-          age: patientData.age ? parseInt(patientData.age) : null,
-          observations: patientData.observations,
-        })
-        .select()
-        .single();
+      let patientId = existingPatientId;
+      
+      // Only create new patient if we don't have an existing one
+      if (!patientId) {
+        const { data: patient, error: patientError } = await supabase
+          .from('patients')
+          .insert({
+            user_id: user.id,
+            name: patientData.name,
+            age: patientData.age ? parseInt(patientData.age) : null,
+            observations: patientData.observations,
+            gender: patientData.gender,
+          })
+          .select()
+          .single();
 
-      if (patientError) throw patientError;
+        if (patientError) throw patientError;
+        patientId = patient.id;
+      }
 
       // Upload all photos in parallel
       const photoKeys = Object.keys(photos) as PhotoType[];
       const uploadPromises = photoKeys.map(key => 
-        photos[key] ? uploadPhotoToStorage(photos[key]!, user.id, patient.id, key) : Promise.resolve(null)
+        photos[key] ? uploadPhotoToStorage(photos[key]!, user.id, patientId!, key) : Promise.resolve(null)
       );
       const uploadedUrls = await Promise.all(uploadPromises);
 
@@ -507,7 +553,7 @@ export function NewAnalysisWizard() {
         .from('analyses')
         .insert({
           user_id: user.id,
-          patient_id: patient.id,
+          patient_id: patientId!,
           procerus_dosage: aiAnalysis?.totalDosage.procerus || 0,
           corrugator_dosage: aiAnalysis?.totalDosage.corrugator || 0,
           resting_photo_url: photoUrlsMap['resting_photo_url'],

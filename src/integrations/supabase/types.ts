@@ -27,6 +27,7 @@ export type Database = {
           id: string
           muscle_strength_score: string | null
           nasal_photo_url: string | null
+          next_appointment_date: string | null
           notes: string | null
           patient_gender: string | null
           patient_id: string
@@ -56,6 +57,7 @@ export type Database = {
           id?: string
           muscle_strength_score?: string | null
           nasal_photo_url?: string | null
+          next_appointment_date?: string | null
           notes?: string | null
           patient_gender?: string | null
           patient_id: string
@@ -85,6 +87,7 @@ export type Database = {
           id?: string
           muscle_strength_score?: string | null
           nasal_photo_url?: string | null
+          next_appointment_date?: string | null
           notes?: string | null
           patient_gender?: string | null
           patient_id?: string
@@ -115,28 +118,55 @@ export type Database = {
       patients: {
         Row: {
           age: number | null
+          allergies: string | null
+          birth_date: string | null
           created_at: string
+          email: string | null
+          gender: string | null
           id: string
+          medical_history: string | null
           name: string
           observations: string | null
+          phone: string | null
+          photo_url: string | null
+          preferred_product: string | null
+          skin_type: string | null
           updated_at: string
           user_id: string
         }
         Insert: {
           age?: number | null
+          allergies?: string | null
+          birth_date?: string | null
           created_at?: string
+          email?: string | null
+          gender?: string | null
           id?: string
+          medical_history?: string | null
           name: string
           observations?: string | null
+          phone?: string | null
+          photo_url?: string | null
+          preferred_product?: string | null
+          skin_type?: string | null
           updated_at?: string
           user_id: string
         }
         Update: {
           age?: number | null
+          allergies?: string | null
+          birth_date?: string | null
           created_at?: string
+          email?: string | null
+          gender?: string | null
           id?: string
+          medical_history?: string | null
           name?: string
           observations?: string | null
+          phone?: string | null
+          photo_url?: string | null
+          preferred_product?: string | null
+          skin_type?: string | null
           updated_at?: string
           user_id?: string
         }

@@ -1,28 +1,93 @@
-import { AlertTriangle, Shield, CheckCircle } from "lucide-react";
+import { AlertTriangle, Shield, CheckCircle, Info } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
-// Limites seguros de dosagem por região muscular (em Unidades)
-export const DOSAGE_LIMITS: Record<string, { max: number; warning: number; label: string }> = {
-  procerus: { max: 15, warning: 12, label: "Prócero" },
-  corrugator_left: { max: 12, warning: 10, label: "Corrugador Esquerdo" },
-  corrugator_right: { max: 12, warning: 10, label: "Corrugador Direito" },
-  frontalis: { max: 20, warning: 15, label: "Frontal" },
-  orbicularis_oculi_left: { max: 15, warning: 12, label: "Orbicular Olho Esq." },
-  orbicularis_oculi_right: { max: 15, warning: 12, label: "Orbicular Olho Dir." },
-  nasalis: { max: 8, warning: 6, label: "Nasal" },
-  levator_labii: { max: 5, warning: 4, label: "Levantador Lábio" },
-  zygomaticus_major: { max: 6, warning: 5, label: "Zigomático Maior" },
-  zygomaticus_minor: { max: 5, warning: 4, label: "Zigomático Menor" },
-  orbicularis_oris: { max: 6, warning: 5, label: "Orbicular da Boca" },
-  depressor_anguli: { max: 6, warning: 5, label: "Depressor do Ângulo" },
-  mentalis: { max: 10, warning: 8, label: "Mentual" },
-  masseter: { max: 60, warning: 50, label: "Masseter" },
+// Limites seguros de dosagem por região muscular (em Unidades) - Atualizado conforme Consenso Brasileiro 2024
+export const DOSAGE_LIMITS: Record<string, { 
+  max: number; 
+  warning: number; 
+  label: string;
+  femaleRange: [number, number];
+  maleRange: [number, number];
+  muscleStrengthModifier: { low: number; medium: number; high: number };
+}> = {
+  procerus: { 
+    max: 12, warning: 10, label: "Prócero",
+    femaleRange: [4, 8], maleRange: [6, 12],
+    muscleStrengthModifier: { low: 0.8, medium: 1.0, high: 1.2 }
+  },
+  corrugator_left: { 
+    max: 15, warning: 12, label: "Corrugador Esquerdo",
+    femaleRange: [6, 10], maleRange: [8, 15],
+    muscleStrengthModifier: { low: 0.75, medium: 1.0, high: 1.25 }
+  },
+  corrugator_right: { 
+    max: 15, warning: 12, label: "Corrugador Direito",
+    femaleRange: [6, 10], maleRange: [8, 15],
+    muscleStrengthModifier: { low: 0.75, medium: 1.0, high: 1.25 }
+  },
+  frontalis: { 
+    max: 20, warning: 15, label: "Frontal",
+    femaleRange: [8, 15], maleRange: [12, 20],
+    muscleStrengthModifier: { low: 0.85, medium: 1.0, high: 1.15 }
+  },
+  orbicularis_oculi_left: { 
+    max: 16, warning: 12, label: "Orbicular Olho Esq.",
+    femaleRange: [6, 12], maleRange: [8, 16],
+    muscleStrengthModifier: { low: 0.8, medium: 1.0, high: 1.2 }
+  },
+  orbicularis_oculi_right: { 
+    max: 16, warning: 12, label: "Orbicular Olho Dir.",
+    femaleRange: [6, 12], maleRange: [8, 16],
+    muscleStrengthModifier: { low: 0.8, medium: 1.0, high: 1.2 }
+  },
+  nasalis: { 
+    max: 6, warning: 5, label: "Nasal",
+    femaleRange: [2, 4], maleRange: [4, 6],
+    muscleStrengthModifier: { low: 0.9, medium: 1.0, high: 1.1 }
+  },
+  levator_labii: { 
+    max: 5, warning: 4, label: "Levantador Lábio",
+    femaleRange: [2, 4], maleRange: [3, 5],
+    muscleStrengthModifier: { low: 0.8, medium: 1.0, high: 1.15 }
+  },
+  zygomaticus_major: { 
+    max: 6, warning: 5, label: "Zigomático Maior",
+    femaleRange: [2, 4], maleRange: [3, 6],
+    muscleStrengthModifier: { low: 0.8, medium: 1.0, high: 1.15 }
+  },
+  zygomaticus_minor: { 
+    max: 5, warning: 4, label: "Zigomático Menor",
+    femaleRange: [2, 3], maleRange: [2, 5],
+    muscleStrengthModifier: { low: 0.8, medium: 1.0, high: 1.15 }
+  },
+  orbicularis_oris: { 
+    max: 6, warning: 5, label: "Orbicular da Boca",
+    femaleRange: [2, 4], maleRange: [3, 6],
+    muscleStrengthModifier: { low: 0.8, medium: 1.0, high: 1.15 }
+  },
+  depressor_anguli: { 
+    max: 6, warning: 5, label: "Depressor do Ângulo",
+    femaleRange: [2, 4], maleRange: [3, 6],
+    muscleStrengthModifier: { low: 0.8, medium: 1.0, high: 1.15 }
+  },
+  mentalis: { 
+    max: 12, warning: 10, label: "Mentual",
+    femaleRange: [4, 8], maleRange: [6, 12],
+    muscleStrengthModifier: { low: 0.8, medium: 1.0, high: 1.2 }
+  },
+  masseter: { 
+    max: 60, warning: 50, label: "Masseter",
+    femaleRange: [25, 40], maleRange: [35, 60],
+    muscleStrengthModifier: { low: 0.8, medium: 1.0, high: 1.2 }
+  },
 };
 
-// Limite total recomendado por sessão
+// Limite total recomendado por sessão (terço superior apenas)
 export const TOTAL_SESSION_LIMIT = {
   max: 100,
   warning: 80,
+  upperThirdMax: 60,
+  upperThirdWarning: 50,
 };
 
 interface DosagesByMuscle {

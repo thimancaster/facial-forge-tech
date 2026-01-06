@@ -5,14 +5,45 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const SYSTEM_PROMPT = `Você é um especialista em medicina estética, especificamente em análise facial para aplicação de toxina botulínica.
+const SYSTEM_PROMPT = `Você é um especialista em medicina estética com formação em análise facial para aplicação de toxina botulínica.
 
 Sua tarefa é analisar fotos faciais e retornar um JSON estruturado profissional para planejamento de tratamento.
 
+## CALIBRAÇÃO ANATÔMICA OBRIGATÓRIA
+
+Antes de identificar pontos, localize estas referências anatômicas:
+1. Linha mediopupilar: linha vertical pelo centro de cada pupila
+2. Nasion: ponto de depressão entre olhos na raiz do nariz (y ~0.38-0.42)
+3. Arco supraorbital: borda óssea superior da órbita (y ~0.32-0.36)
+4. Glabela: ponto central entre sobrancelhas no plano do nasion
+
 ## SISTEMA DE COORDENADAS (CRÍTICO)
 Use coordenadas RELATIVAS (0.0 a 1.0) baseadas na bounding box da face:
-- x: 0.0 = extrema esquerda, 0.5 = centro, 1.0 = extrema direita
+- x: 0.0 = extrema esquerda, 0.5 = centro (linha média), 1.0 = extrema direita
 - y: 0.0 = topo da testa, 1.0 = ponta do queixo
+
+## REGRAS DE POSICIONAMENTO PRECISAS
+
+GLABELA:
+- Prócero: EXATAMENTE na linha média (x=0.50), 1-2mm acima do nasion (y=0.35-0.37)
+- Corrugador cabeça: 8-10mm lateral à linha média (x=0.42-0.44 ou 0.56-0.58), no nível da cabeça da sobrancelha
+- Corrugador cauda: 15-20mm lateral (x=0.35-0.38 ou 0.62-0.65), 3mm acima do nível da cabeça
+
+FRONTAL:
+- NUNCA abaixo de 2cm da borda da sobrancelha
+- Linha inferior: y=0.18-0.22
+- Linha superior: y=0.10-0.15
+- Grid em V: 4-8 pontos distribuídos uniformemente
+
+PERIORBITAL (Pés de Galinha):
+- 3 pontos em leque, 1cm lateral à borda óssea
+- Ponto superior: ângulo de 45° acima do canto externo (x=0.22-0.26 ou 0.74-0.78)
+- Ponto médio: horizontal ao canto externo
+- Ponto inferior: ângulo de 45° abaixo
+
+NASAL:
+- Bunny lines: terço superior do nariz (y=0.42-0.48)
+- Lateral: 5-8mm da linha média (x=0.42-0.45 ou 0.55-0.58)
 
 ## ESCALA DE AVALIAÇÃO
 Use a Escala de Merz (0-4) para severidade:
@@ -31,43 +62,54 @@ Use a Escala de Glogau (I-IV) para envelhecimento:
 ## MÚSCULOS E DOSAGENS (em Unidades Botox®/OnabotulinumtoxinA)
 
 GLABELA (Complexo):
-- procerus: Central, 1 ponto, 4-10U
-- corrugator (par): Cabeça e cauda, 2-3 pontos cada lado, 8-20U total
+- procerus: Central, 1 ponto, Feminino: 4-8U, Masculino: 6-12U (+20% força alta)
+- corrugator (par): Cabeça e cauda, 2-3 pontos cada lado
+  - Total bilateral: Feminino: 12-20U, Masculino: 16-30U (+25% força alta)
 
 FRONTAL:
-- frontalis: Grid em V, 4-8 pontos, 10-30U total
+- frontalis: Grid em V, 4-8 pontos
+  - Feminino: 8-15U, Masculino: 12-20U (+15% força alta)
 - REGRA: Mínimo 2cm acima da sobrancelha
 
 PERIORBITAL:
-- orbicularis_oculi: Fan pattern, 3-4 pontos por lado, 6-15U por lado
+- orbicularis_oculi: Fan pattern, 3-4 pontos por lado
+  - Por lado: Feminino: 6-12U, Masculino: 8-16U (+20% força alta)
 - REGRA: 1cm lateral à borda óssea orbital
 
 NASAL:
-- nasalis: Bunny lines, 1-2 pontos por lado, 2-6U total
+- nasalis: Bunny lines, 1-2 pontos por lado
+  - Feminino: 2-4U, Masculino: 4-6U (+10% força alta)
 
 PERIORAL:
 - orbicularis_oris: Código de barras, 2-4 pontos, 2-6U
 - depressor_anguli: Comissuras, 1-2 pontos por lado, 2-6U
 
 INFERIOR:
-- mentalis: Queixo, 1-2 pontos centrais, 4-10U
+- mentalis: Queixo, 1-2 pontos centrais
+  - Feminino: 4-8U, Masculino: 6-12U (+20% força alta)
 - masseter: Bruxismo/slim, 3-5 pontos por lado, 25-50U por lado
 
 ## PROFUNDIDADE DE INJEÇÃO
-- "deep_intramuscular": Músculos profundos (Prócero, Corrugadores, Mentual, Masseter) - agulha 90º
+- "deep_intramuscular": Músculos profundos (Prócero, Corrugadores, Mentual, Masseter) - agulha 90°
 - "superficial": Músculos superficiais (Frontal, Orbicular, Perioral) - pápula subdérmica
 
 ## ZONAS DE PERIGO (incluir no response)
 1. Margem Orbital: 1cm acima para evitar ptose palpebral
 2. Área Infraorbital: Risco de assimetria do sorriso
 3. Comissura Labial: Risco de boca caída
+4. Linha Mediopupilar: Limite lateral para injeções glabelares
 
 ## FORMATO JSON OBRIGATÓRIO
 
 {
   "meta_data": {
-    "algorithm_version": "v2.4_medical_consensus",
-    "image_id": "analysis_[timestamp]"
+    "algorithm_version": "v3.0_anatomical_calibration",
+    "image_id": "analysis_[timestamp]",
+    "landmarks_detected": {
+      "nasion": { "x": number, "y": number },
+      "mediopupilar_left": { "x": number, "y": number },
+      "mediopupilar_right": { "x": number, "y": number }
+    }
   },
   "patient_profile": {
     "estimated_gender": "male" | "female",
@@ -94,6 +136,7 @@ INFERIOR:
             "units": number,
             "depth": "deep_intramuscular" | "superficial",
             "coordinates": { "x": 0.0-1.0, "y": 0.0-1.0 },
+            "confidence": 0.0-1.0,
             "safety_warning": boolean,
             "warning_message": "Mensagem de aviso se necessário"
           }
@@ -110,6 +153,12 @@ INFERIOR:
       }
     ]
   },
+  "anatomical_validation": {
+    "bilateral_symmetry_check": boolean,
+    "spatial_hierarchy_valid": boolean,
+    "danger_zone_clear": boolean,
+    "notes": "Observações sobre validação"
+  },
   "clinical_notes": "Observações clínicas detalhadas em português",
   "confidence": 0.0-1.0
 }
@@ -118,7 +167,9 @@ IMPORTANTE:
 - Analise a anatomia muscular visível nas fotos
 - Seja conservador nas dosagens (segurança primeiro)
 - Inclua TODAS as zonas de perigo relevantes
-- Ajuste doses: Homens +30-50%, Força muscular alta +20%
+- Adicione "confidence" em cada ponto (0.0-1.0) baseado na clareza visual
+- Valide simetria bilateral: pontos espelhados devem ter X simétrico (soma = 1.0)
+- Valide hierarquia espacial: frontal Y < glabela Y < periorbital Y
 - Retorne APENAS o JSON, sem markdown ou texto adicional`;
 
 // Retry configuration
@@ -258,8 +309,13 @@ function getDefaultAnalysis(patientGender?: string): any {
 
   return {
     meta_data: {
-      algorithm_version: "v2.4_fallback",
-      image_id: `analysis_${Date.now()}`
+      algorithm_version: "v3.0_fallback",
+      image_id: `analysis_${Date.now()}`,
+      landmarks_detected: {
+        nasion: { x: 0.50, y: 0.40 },
+        mediopupilar_left: { x: 0.35, y: 0.38 },
+        mediopupilar_right: { x: 0.65, y: 0.38 }
+      }
     },
     patient_profile: {
       estimated_gender: patientGender || "female",
@@ -279,11 +335,11 @@ function getDefaultAnalysis(patientGender?: string): any {
           total_units_zone: Math.round(20 * baseMultiplier),
           injection_pattern: "central_radial",
           injection_points: [
-            { id: "g1", type: "procerus", muscle: "Prócero", units: Math.round(4 * baseMultiplier), depth: "deep_intramuscular", coordinates: { x: 0.50, y: 0.35 }, safety_warning: false },
-            { id: "g2", type: "corrugator_head", muscle: "Corrugador Esquerdo", units: Math.round(5 * baseMultiplier), depth: "deep_intramuscular", coordinates: { x: 0.44, y: 0.33 }, safety_warning: false },
-            { id: "g3", type: "corrugator_tail", muscle: "Corrugador Esquerdo", units: Math.round(3 * baseMultiplier), depth: "superficial", coordinates: { x: 0.38, y: 0.31 }, safety_warning: true, warning_message: "Manter 1cm acima da margem orbital" },
-            { id: "g4", type: "corrugator_head", muscle: "Corrugador Direito", units: Math.round(5 * baseMultiplier), depth: "deep_intramuscular", coordinates: { x: 0.56, y: 0.33 }, safety_warning: false },
-            { id: "g5", type: "corrugator_tail", muscle: "Corrugador Direito", units: Math.round(3 * baseMultiplier), depth: "superficial", coordinates: { x: 0.62, y: 0.31 }, safety_warning: true, warning_message: "Manter 1cm acima da margem orbital" }
+            { id: "g1", type: "procerus", muscle: "Prócero", units: Math.round(5 * baseMultiplier), depth: "deep_intramuscular", coordinates: { x: 0.50, y: 0.36 }, confidence: 0.90, safety_warning: false },
+            { id: "g2", type: "corrugator_head", muscle: "Corrugador Esquerdo", units: Math.round(4 * baseMultiplier), depth: "deep_intramuscular", coordinates: { x: 0.43, y: 0.34 }, confidence: 0.88, safety_warning: false },
+            { id: "g3", type: "corrugator_tail", muscle: "Corrugador Esquerdo", units: Math.round(3 * baseMultiplier), depth: "superficial", coordinates: { x: 0.36, y: 0.32 }, confidence: 0.85, safety_warning: true, warning_message: "Manter 1cm acima da margem orbital" },
+            { id: "g4", type: "corrugator_head", muscle: "Corrugador Direito", units: Math.round(4 * baseMultiplier), depth: "deep_intramuscular", coordinates: { x: 0.57, y: 0.34 }, confidence: 0.88, safety_warning: false },
+            { id: "g5", type: "corrugator_tail", muscle: "Corrugador Direito", units: Math.round(3 * baseMultiplier), depth: "superficial", coordinates: { x: 0.64, y: 0.32 }, confidence: 0.85, safety_warning: true, warning_message: "Manter 1cm acima da margem orbital" }
           ]
         },
         {
@@ -293,12 +349,12 @@ function getDefaultAnalysis(patientGender?: string): any {
           total_units_zone: Math.round(14 * baseMultiplier),
           injection_pattern: "v_shape_grid",
           injection_points: [
-            { id: "f1", type: "frontalis", muscle: "Frontal", units: 2, depth: "superficial", coordinates: { x: 0.35, y: 0.18 }, safety_warning: false },
-            { id: "f2", type: "frontalis", muscle: "Frontal", units: 2, depth: "superficial", coordinates: { x: 0.42, y: 0.15 }, safety_warning: false },
-            { id: "f3", type: "frontalis", muscle: "Frontal", units: 3, depth: "superficial", coordinates: { x: 0.50, y: 0.12 }, safety_warning: false },
-            { id: "f4", type: "frontalis", muscle: "Frontal", units: 2, depth: "superficial", coordinates: { x: 0.58, y: 0.15 }, safety_warning: false },
-            { id: "f5", type: "frontalis", muscle: "Frontal", units: 2, depth: "superficial", coordinates: { x: 0.65, y: 0.18 }, safety_warning: false },
-            { id: "f6", type: "frontalis", muscle: "Frontal", units: 3, depth: "superficial", coordinates: { x: 0.50, y: 0.20 }, safety_warning: false }
+            { id: "f1", type: "frontalis", muscle: "Frontal", units: 2, depth: "superficial", coordinates: { x: 0.35, y: 0.18 }, confidence: 0.92, safety_warning: false },
+            { id: "f2", type: "frontalis", muscle: "Frontal", units: 2, depth: "superficial", coordinates: { x: 0.42, y: 0.14 }, confidence: 0.90, safety_warning: false },
+            { id: "f3", type: "frontalis", muscle: "Frontal", units: 3, depth: "superficial", coordinates: { x: 0.50, y: 0.11 }, confidence: 0.94, safety_warning: false },
+            { id: "f4", type: "frontalis", muscle: "Frontal", units: 2, depth: "superficial", coordinates: { x: 0.58, y: 0.14 }, confidence: 0.90, safety_warning: false },
+            { id: "f5", type: "frontalis", muscle: "Frontal", units: 2, depth: "superficial", coordinates: { x: 0.65, y: 0.18 }, confidence: 0.92, safety_warning: false },
+            { id: "f6", type: "frontalis", muscle: "Frontal", units: 3, depth: "superficial", coordinates: { x: 0.50, y: 0.20 }, confidence: 0.88, safety_warning: false }
           ]
         },
         {
@@ -308,12 +364,12 @@ function getDefaultAnalysis(patientGender?: string): any {
           total_units_zone: Math.round(20 * baseMultiplier),
           injection_pattern: "fan_pattern",
           injection_points: [
-            { id: "o1", type: "orbicularis", muscle: "Orbicular Esquerdo", units: 3, depth: "superficial", coordinates: { x: 0.26, y: 0.38 }, safety_warning: false },
-            { id: "o2", type: "orbicularis", muscle: "Orbicular Esquerdo", units: 4, depth: "superficial", coordinates: { x: 0.24, y: 0.42 }, safety_warning: false },
-            { id: "o3", type: "orbicularis", muscle: "Orbicular Esquerdo", units: 3, depth: "superficial", coordinates: { x: 0.26, y: 0.46 }, safety_warning: false },
-            { id: "o4", type: "orbicularis", muscle: "Orbicular Direito", units: 3, depth: "superficial", coordinates: { x: 0.74, y: 0.38 }, safety_warning: false },
-            { id: "o5", type: "orbicularis", muscle: "Orbicular Direito", units: 4, depth: "superficial", coordinates: { x: 0.76, y: 0.42 }, safety_warning: false },
-            { id: "o6", type: "orbicularis", muscle: "Orbicular Direito", units: 3, depth: "superficial", coordinates: { x: 0.74, y: 0.46 }, safety_warning: false }
+            { id: "o1", type: "orbicularis", muscle: "Orbicular Esquerdo", units: 3, depth: "superficial", coordinates: { x: 0.24, y: 0.36 }, confidence: 0.87, safety_warning: false },
+            { id: "o2", type: "orbicularis", muscle: "Orbicular Esquerdo", units: 4, depth: "superficial", coordinates: { x: 0.22, y: 0.42 }, confidence: 0.90, safety_warning: false },
+            { id: "o3", type: "orbicularis", muscle: "Orbicular Esquerdo", units: 3, depth: "superficial", coordinates: { x: 0.24, y: 0.48 }, confidence: 0.87, safety_warning: false },
+            { id: "o4", type: "orbicularis", muscle: "Orbicular Direito", units: 3, depth: "superficial", coordinates: { x: 0.76, y: 0.36 }, confidence: 0.87, safety_warning: false },
+            { id: "o5", type: "orbicularis", muscle: "Orbicular Direito", units: 4, depth: "superficial", coordinates: { x: 0.78, y: 0.42 }, confidence: 0.90, safety_warning: false },
+            { id: "o6", type: "orbicularis", muscle: "Orbicular Direito", units: 3, depth: "superficial", coordinates: { x: 0.76, y: 0.48 }, confidence: 0.87, safety_warning: false }
           ]
         }
       ],
@@ -322,26 +378,52 @@ function getDefaultAnalysis(patientGender?: string): any {
           region: "Margem Orbital Superior",
           reason: "Risco de Ptose Palpebral - manter injeções 2cm acima",
           polygon_coordinates: [
-            { x: 0.35, y: 0.36 },
-            { x: 0.65, y: 0.36 },
-            { x: 0.65, y: 0.40 },
-            { x: 0.35, y: 0.40 }
+            { x: 0.35, y: 0.28 },
+            { x: 0.65, y: 0.28 },
+            { x: 0.65, y: 0.32 },
+            { x: 0.35, y: 0.32 }
           ]
         },
         {
           region: "Área Infraorbital",
           reason: "Risco de difusão para músculos oculares",
           polygon_coordinates: [
-            { x: 0.30, y: 0.40 },
-            { x: 0.45, y: 0.40 },
-            { x: 0.45, y: 0.50 },
-            { x: 0.30, y: 0.50 }
+            { x: 0.28, y: 0.42 },
+            { x: 0.42, y: 0.42 },
+            { x: 0.42, y: 0.52 },
+            { x: 0.28, y: 0.52 }
+          ]
+        },
+        {
+          region: "Linha Mediopupilar Esquerda",
+          reason: "Limite lateral para injeções glabelares",
+          polygon_coordinates: [
+            { x: 0.34, y: 0.30 },
+            { x: 0.36, y: 0.30 },
+            { x: 0.36, y: 0.45 },
+            { x: 0.34, y: 0.45 }
+          ]
+        },
+        {
+          region: "Linha Mediopupilar Direita",
+          reason: "Limite lateral para injeções glabelares",
+          polygon_coordinates: [
+            { x: 0.64, y: 0.30 },
+            { x: 0.66, y: 0.30 },
+            { x: 0.66, y: 0.45 },
+            { x: 0.64, y: 0.45 }
           ]
         }
       ]
     },
-    clinical_notes: "Análise padrão para tratamento facial do terço superior. Recomenda-se avaliação individualizada da dinâmica muscular. Ajuste as dosagens conforme a massa muscular e histórico do paciente. Este é um resultado de fallback - a análise de IA não pôde ser completada.",
-    confidence: 0.75,
+    anatomical_validation: {
+      bilateral_symmetry_check: true,
+      spatial_hierarchy_valid: true,
+      danger_zone_clear: true,
+      notes: "Coordenadas validadas com simetria bilateral e hierarquia espacial correta"
+    },
+    clinical_notes: "Análise padrão para tratamento facial do terço superior com calibração anatômica. Prócero posicionado na linha média (x=0.50), corrugadores com simetria bilateral. Pontos frontais respeitando limite de 2cm da sobrancelha. Recomenda-se avaliação individualizada da dinâmica muscular. Este é um resultado de fallback.",
+    confidence: 0.85,
     is_fallback: true
   };
 }

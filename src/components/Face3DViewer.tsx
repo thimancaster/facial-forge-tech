@@ -16,6 +16,7 @@ export interface InjectionPoint {
   depth: "superficial" | "deep";
   dosage: number;
   notes?: string;
+  confidence?: number; // 0.0 - 1.0 confidence score
 }
 
 export interface SafetyZone {
@@ -174,13 +175,74 @@ function getMuscleColor(muscle: string): string {
   return MUSCLE_DATA[muscle]?.color || "#B85450";
 }
 
-// Convert 2D percentage coordinates to 3D face positions
-function percentTo3D(x: number, y: number): [number, number, number] {
+// Zone type for anatomical mapping
+type AnatomicalZone = 'glabella' | 'frontalis' | 'periorbital' | 'nasal' | 'perioral' | 'mentalis' | 'masseter';
+
+// Get zone from muscle name
+function getZoneFromMuscle(muscle: string): AnatomicalZone {
+  const muscleLower = muscle.toLowerCase();
+  if (muscleLower.includes('procerus') || muscleLower.includes('prócero') || muscleLower.includes('corrugador') || muscleLower.includes('corrugator')) {
+    return 'glabella';
+  }
+  if (muscleLower.includes('frontal') || muscleLower.includes('frontalis')) {
+    return 'frontalis';
+  }
+  if (muscleLower.includes('orbicular') && (muscleLower.includes('olho') || muscleLower.includes('oculi'))) {
+    return 'periorbital';
+  }
+  if (muscleLower.includes('nasal') || muscleLower.includes('nasalis')) {
+    return 'nasal';
+  }
+  if (muscleLower.includes('oris') || muscleLower.includes('boca') || muscleLower.includes('depressor') || muscleLower.includes('labial')) {
+    return 'perioral';
+  }
+  if (muscleLower.includes('mentalis') || muscleLower.includes('mentual') || muscleLower.includes('queixo')) {
+    return 'mentalis';
+  }
+  if (muscleLower.includes('masseter')) {
+    return 'masseter';
+  }
+  return 'glabella'; // default
+}
+
+// Zone-specific curvature configuration for accurate 3D mapping
+const ZONE_CONFIG: Record<AnatomicalZone, { baseZ: number; curveFactor: number; yOffset: number }> = {
+  glabella: { baseZ: 1.4, curveFactor: 0.15, yOffset: 0.2 },
+  frontalis: { baseZ: 1.0, curveFactor: 0.25, yOffset: 0.3 },
+  periorbital: { baseZ: 1.2, curveFactor: 0.30, yOffset: 0.15 },
+  nasal: { baseZ: 1.55, curveFactor: 0.10, yOffset: 0.1 },
+  perioral: { baseZ: 1.4, curveFactor: 0.20, yOffset: 0.0 },
+  mentalis: { baseZ: 1.2, curveFactor: 0.30, yOffset: -0.1 },
+  masseter: { baseZ: 0.6, curveFactor: 0.40, yOffset: 0.0 }
+};
+
+// Convert 2D percentage coordinates to 3D face positions with zone-specific curvature
+function percentTo3D(x: number, y: number, zone?: AnatomicalZone): [number, number, number] {
   const x3d = ((x - 50) / 50) * 1.4;
   const y3d = ((50 - y) / 50) * 1.8 + 0.2;
+  
+  if (zone && ZONE_CONFIG[zone]) {
+    const config = ZONE_CONFIG[zone];
+    const z3d = config.baseZ - Math.pow(Math.abs(x3d), 2) * config.curveFactor;
+    return [x3d, y3d + config.yOffset, z3d];
+  }
+  
+  // Default curvature (fallback)
   const curveFactor = 1 - Math.pow(Math.abs(x3d) / 1.4, 2) * 0.4;
   const z3d = Math.sqrt(Math.max(0.1, 2.0 - x3d * x3d * 0.5 - Math.pow((y3d - 0.3) / 2, 2) * 0.3)) * curveFactor + 0.4;
   return [x3d, y3d, z3d];
+}
+
+// Get confidence color based on score
+function getConfidenceColor(confidence: number): string {
+  if (confidence >= 0.8) return "#10B981"; // Green - high confidence
+  if (confidence >= 0.5) return "#F59E0B"; // Yellow/Amber - medium confidence
+  return "#EF4444"; // Red - low confidence
+}
+
+// Get confidence ring size based on score
+function getConfidenceRingScale(confidence: number): number {
+  return 0.8 + confidence * 0.4; // Scale from 0.8 to 1.2
 }
 
 // Convert 3D coordinates back to percentage
@@ -549,7 +611,7 @@ function DiffusionHalo({
   );
 }
 
-// Injection point sphere component with enhanced diffusion visualization
+// Injection point sphere component with enhanced diffusion visualization and confidence indicators
 function InjectionPointMesh({ 
   point, 
   onClick,
@@ -563,9 +625,18 @@ function InjectionPointMesh({
 }) {
   const meshRef = useRef<THREE.Mesh>(null);
   const ringRef = useRef<THREE.Mesh>(null);
+  const confidenceRingRef = useRef<THREE.Mesh>(null);
   const [hovered, setHovered] = useState(false);
-  const position = percentTo3D(point.x, point.y);
+  
+  // Use zone-specific mapping for more accurate 3D positioning
+  const zone = getZoneFromMuscle(point.muscle);
+  const position = percentTo3D(point.x, point.y, zone);
   const muscleLabel = MUSCLE_DATA[point.muscle]?.label || point.muscle;
+  
+  // Confidence indicators
+  const confidence = point.confidence ?? 0.85; // Default to 0.85 if not provided
+  const confidenceColor = getConfidenceColor(confidence);
+  const confidenceScale = getConfidenceRingScale(confidence);
 
   useFrame((state) => {
     if (meshRef.current) {
@@ -574,6 +645,12 @@ function InjectionPointMesh({
     }
     if (ringRef.current) {
       ringRef.current.rotation.z = state.clock.elapsedTime * 0.5;
+    }
+    // Confidence ring pulsing
+    if (confidenceRingRef.current) {
+      const pulseIntensity = confidence < 0.5 ? 0.3 : 0.1; // Lower confidence = more pulsing
+      const pulseScale = confidenceScale + Math.sin(state.clock.elapsedTime * 2) * pulseIntensity;
+      confidenceRingRef.current.scale.setScalar(pulseScale);
     }
   });
 
@@ -588,9 +665,20 @@ function InjectionPointMesh({
         />
       )}
 
+      {/* Confidence indicator ring (outer) */}
+      <mesh ref={confidenceRingRef} position={[0, 0, -0.01]}>
+        <ringGeometry args={[0.14, 0.18, 32]} />
+        <meshBasicMaterial 
+          color={confidenceColor} 
+          transparent 
+          opacity={0.7}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+
       {/* Outer glow ring */}
       <mesh ref={ringRef}>
-        <ringGeometry args={[0.12, 0.16, 32]} />
+        <ringGeometry args={[0.10, 0.13, 32]} />
         <meshBasicMaterial 
           color={isSelected ? "#FFD700" : "#FFFFFF"} 
           transparent 
@@ -616,7 +704,7 @@ function InjectionPointMesh({
           document.body.style.cursor = "auto";
         }}
       >
-        <sphereGeometry args={[0.07, 24, 24]} />
+        <sphereGeometry args={[0.06, 24, 24]} />
         <meshStandardMaterial 
           color="#DC2626"
           emissive="#DC2626"
@@ -628,7 +716,7 @@ function InjectionPointMesh({
       
       {/* Depth indicator ring */}
       <mesh position={[0, 0, 0.01]}>
-        <ringGeometry args={[0.08, 0.10, 32]} />
+        <ringGeometry args={[0.07, 0.09, 32]} />
         <meshBasicMaterial 
           color={point.depth === "deep" ? "#7C3AED" : "#10B981"} 
           side={THREE.DoubleSide}
@@ -642,9 +730,9 @@ function InjectionPointMesh({
       </mesh>
 
       {/* Dosage indicator text */}
-      <Billboard position={[0, 0.18, 0]} follow={true}>
+      <Billboard position={[0, 0.20, 0]} follow={true}>
         <Text
-          fontSize={0.06}
+          fontSize={0.055}
           color="#FFFFFF"
           anchorX="center"
           anchorY="middle"
@@ -655,10 +743,24 @@ function InjectionPointMesh({
         </Text>
       </Billboard>
 
+      {/* Confidence badge */}
+      <Billboard position={[0.12, 0.12, 0]} follow={true}>
+        <Text
+          fontSize={0.035}
+          color={confidenceColor}
+          anchorX="center"
+          anchorY="middle"
+          outlineWidth={0.004}
+          outlineColor="#000000"
+        >
+          {Math.round(confidence * 100)}%
+        </Text>
+      </Billboard>
+
       {/* Tooltip on hover */}
       {hovered && (
         <Html distanceFactor={8} style={{ pointerEvents: "none" }}>
-          <div className="bg-slate-900/95 backdrop-blur-sm border border-amber-500/30 rounded-lg px-4 py-3 shadow-2xl whitespace-nowrap min-w-[180px]">
+          <div className="bg-slate-900/95 backdrop-blur-sm border border-amber-500/30 rounded-lg px-4 py-3 shadow-2xl whitespace-nowrap min-w-[200px]">
             <p className="font-bold text-amber-400 text-sm">{muscleLabel}</p>
             <div className="flex items-center gap-2 mt-1">
               <span className="text-white font-semibold text-lg">{point.dosage}U</span>
@@ -668,9 +770,22 @@ function InjectionPointMesh({
                 {point.depth === "deep" ? "Profundo" : "Superficial"}
               </span>
             </div>
+            <div className="flex items-center gap-2 mt-2">
+              <span className="text-xs text-slate-400">Confiança:</span>
+              <span 
+                className="text-xs font-semibold px-2 py-0.5 rounded-full"
+                style={{ 
+                  backgroundColor: `${confidenceColor}20`, 
+                  color: confidenceColor 
+                }}
+              >
+                {Math.round(confidence * 100)}%
+              </span>
+            </div>
             <div className="text-xs text-slate-400 mt-2 border-t border-slate-700 pt-2">
+              <p>Zona: {zone}</p>
               <p>Difusão: ~{Math.round(0.8 + (point.dosage / 25) * 1.2)}cm</p>
-              {point.notes && <p className="mt-1">{point.notes}</p>}
+              {point.notes && <p className="mt-1 text-amber-300">{point.notes}</p>}
             </div>
           </div>
         </Html>

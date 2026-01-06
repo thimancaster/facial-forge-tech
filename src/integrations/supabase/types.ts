@@ -115,6 +115,116 @@ export type Database = {
           },
         ]
       }
+      appointment_reminders: {
+        Row: {
+          appointment_id: string
+          created_at: string
+          error_message: string | null
+          id: string
+          reminder_type: string
+          scheduled_for: string
+          sent_at: string | null
+          status: string | null
+        }
+        Insert: {
+          appointment_id: string
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          reminder_type?: string
+          scheduled_for: string
+          sent_at?: string | null
+          status?: string | null
+        }
+        Update: {
+          appointment_id?: string
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          reminder_type?: string
+          scheduled_for?: string
+          sent_at?: string | null
+          status?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "appointment_reminders_appointment_id_fkey"
+            columns: ["appointment_id"]
+            isOneToOne: false
+            referencedRelation: "appointments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      appointments: {
+        Row: {
+          analysis_id: string | null
+          appointment_type: string
+          created_at: string
+          id: string
+          notes: string | null
+          patient_email: string | null
+          patient_id: string
+          patient_phone: string | null
+          reminder_days_before: number[] | null
+          reminder_email: boolean | null
+          scheduled_date: string
+          scheduled_time: string | null
+          status: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          analysis_id?: string | null
+          appointment_type?: string
+          created_at?: string
+          id?: string
+          notes?: string | null
+          patient_email?: string | null
+          patient_id: string
+          patient_phone?: string | null
+          reminder_days_before?: number[] | null
+          reminder_email?: boolean | null
+          scheduled_date: string
+          scheduled_time?: string | null
+          status?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          analysis_id?: string | null
+          appointment_type?: string
+          created_at?: string
+          id?: string
+          notes?: string | null
+          patient_email?: string | null
+          patient_id?: string
+          patient_phone?: string | null
+          reminder_days_before?: number[] | null
+          reminder_email?: boolean | null
+          scheduled_date?: string
+          scheduled_time?: string | null
+          status?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "appointments_analysis_id_fkey"
+            columns: ["analysis_id"]
+            isOneToOne: false
+            referencedRelation: "analyses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "appointments_patient_id_fkey"
+            columns: ["patient_id"]
+            isOneToOne: false
+            referencedRelation: "patients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       patients: {
         Row: {
           age: number | null

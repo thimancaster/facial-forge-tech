@@ -9,9 +9,10 @@ import { AnalysesGallery } from "@/components/AnalysesGallery";
 import { ProfileSettings } from "@/components/ProfileSettings";
 import { RecentAnalyses } from "@/components/RecentAnalyses";
 import { BeforeAfterComparison } from "@/components/BeforeAfterComparison";
+import Appointments from "@/pages/Appointments";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-import { Loader2, PlusCircle, Users, TrendingUp } from "lucide-react";
+import { Loader2, PlusCircle, Users, TrendingUp, Calendar } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -278,6 +279,7 @@ const Dashboard = () => {
               <Route index element={<DashboardHome />} />
               <Route path="patients" element={<PatientsPage />} />
               <Route path="new-analysis" element={<NewAnalysisPage />} />
+              <Route path="appointments" element={<Appointments />} />
               <Route path="protocols" element={<ProtocolsPage />} />
               <Route path="comparison" element={<ComparisonPage />} />
               <Route path="settings" element={<SettingsPage />} />

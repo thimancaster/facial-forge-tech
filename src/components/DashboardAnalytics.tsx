@@ -3,10 +3,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, AreaChart, Area } from "recharts";
-import { TrendingUp, TrendingDown, Users, FileText, Calendar, Activity, Target, Syringe } from "lucide-react";
+import { TrendingUp, TrendingDown, Users, FileText, Calendar, Activity, Target, Syringe, Filter, X } from "lucide-react";
 import { format, subMonths, startOfMonth, endOfMonth, parseISO, isWithinInterval } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
@@ -19,11 +20,30 @@ interface Analysis {
   product_type: string | null;
   patient_gender: string | null;
   status: string | null;
+  patient_id: string;
   patients?: {
+    id: string;
     name: string;
     gender: string | null;
   };
 }
+
+const REGIONS = [
+  { value: 'all', label: 'Todas as regiões' },
+  { value: 'glabela', label: 'Glabela' },
+  { value: 'frontal', label: 'Frontal' },
+  { value: 'periorbital', label: 'Periorbital' },
+  { value: 'nasal', label: 'Nasal' },
+  { value: 'perioral', label: 'Perioral' },
+  { value: 'mentual', label: 'Mentual' },
+];
+
+const PRODUCTS = [
+  { value: 'all', label: 'Todos os produtos' },
+  { value: 'OnabotulinumtoxinA', label: 'Botox®' },
+  { value: 'AbobotulinumtoxinA', label: 'Dysport®' },
+  { value: 'IncobotulinumtoxinA', label: 'Xeomin®' },
+];
 
 const COLORS = ['#8B5CF6', '#F59E0B', '#EC4899', '#06B6D4', '#10B981', '#F43F5E', '#6366F1', '#84CC16'];
 
@@ -47,6 +67,20 @@ export function DashboardAnalytics() {
   const [patients, setPatients] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [timeRange, setTimeRange] = useState("6");
+  
+  // Advanced filters
+  const [selectedPatient, setSelectedPatient] = useState("all");
+  const [selectedProduct, setSelectedProduct] = useState("all");
+  const [selectedRegion, setSelectedRegion] = useState("all");
+  const [showFilters, setShowFilters] = useState(false);
+
+  const hasActiveFilters = selectedPatient !== "all" || selectedProduct !== "all" || selectedRegion !== "all";
+
+  const clearFilters = () => {
+    setSelectedPatient("all");
+    setSelectedProduct("all");
+    setSelectedRegion("all");
+  };
 
   useEffect(() => {
     if (user) {
@@ -61,13 +95,13 @@ export function DashboardAnalytics() {
     const [analysesRes, patientsRes] = await Promise.all([
       supabase
         .from("analyses")
-        .select("id, created_at, procerus_dosage, corrugator_dosage, ai_injection_points, product_type, patient_gender, status, patients(name, gender)")
+        .select("id, created_at, procerus_dosage, corrugator_dosage, ai_injection_points, product_type, patient_gender, status, patient_id, patients(id, name, gender)")
         .gte("created_at", startDate.toISOString())
         .order("created_at", { ascending: true }),
       supabase
         .from("patients")
         .select("id, name, gender, created_at")
-        .order("created_at", { ascending: true }),
+        .order("name", { ascending: true }),
     ]);
 
     setAnalyses((analysesRes.data as Analysis[]) || []);
@@ -75,14 +109,64 @@ export function DashboardAnalytics() {
     setIsLoading(false);
   };
 
-  // Calculate statistics
+  // Filter analyses based on selected filters
+  const filteredAnalyses = useMemo(() => {
+    return analyses.filter(analysis => {
+      // Patient filter
+      if (selectedPatient !== "all" && analysis.patient_id !== selectedPatient) {
+        return false;
+      }
+
+      // Product filter
+      if (selectedProduct !== "all" && analysis.product_type !== selectedProduct) {
+        return false;
+      }
+
+      // Region filter - check if analysis has points in the selected region
+      if (selectedRegion !== "all") {
+        const points = Array.isArray(analysis.ai_injection_points) ? analysis.ai_injection_points : [];
+        const hasRegion = points.some((point: any) => {
+          const muscle = point.muscle?.toLowerCase() || '';
+          switch (selectedRegion) {
+            case 'glabela':
+              return muscle.includes('procerus') || muscle.includes('corrugator');
+            case 'frontal':
+              return muscle.includes('frontal');
+            case 'periorbital':
+              return muscle.includes('orbicular') && (muscle.includes('oculi') || muscle.includes('olho'));
+            case 'nasal':
+              return muscle.includes('nasal');
+            case 'perioral':
+              return muscle.includes('oris') || muscle.includes('depressor') || muscle.includes('labial');
+            case 'mentual':
+              return muscle.includes('mentalis') || muscle.includes('mentual');
+            default:
+              return true;
+          }
+        });
+        
+        // Also check legacy fields for glabela
+        if (selectedRegion === 'glabela') {
+          if ((analysis.procerus_dosage || 0) > 0 || (analysis.corrugator_dosage || 0) > 0) {
+            return true;
+          }
+        }
+        
+        if (!hasRegion) return false;
+      }
+
+      return true;
+    });
+  }, [analyses, selectedPatient, selectedProduct, selectedRegion]);
+
+  // Calculate statistics based on filtered analyses
   const stats = useMemo(() => {
-    const totalAnalyses = analyses.length;
+    const totalAnalyses = filteredAnalyses.length;
     const totalPatients = patients.length;
-    const completedAnalyses = analyses.filter(a => a.status === 'completed').length;
+    const completedAnalyses = filteredAnalyses.filter(a => a.status === 'completed').length;
     
     // Calculate total dosage
-    const totalDosage = analyses.reduce((sum, a) => {
+    const totalDosage = filteredAnalyses.reduce((sum, a) => {
       const procerus = a.procerus_dosage || 0;
       const corrugator = a.corrugator_dosage || 0;
       const points = Array.isArray(a.ai_injection_points) ? a.ai_injection_points : [];
@@ -106,9 +190,9 @@ export function DashboardAnalytics() {
       femalePatients,
       malePatients,
     };
-  }, [analyses, patients]);
+  }, [filteredAnalyses, patients]);
 
-  // Monthly evolution data
+  // Monthly evolution data based on filtered analyses
   const monthlyData = useMemo(() => {
     const months: Record<string, { month: string; analyses: number; dosage: number; patients: number }> = {};
     
@@ -124,8 +208,8 @@ export function DashboardAnalytics() {
       };
     }
 
-    // Count analyses per month
-    analyses.forEach(analysis => {
+    // Count filtered analyses per month
+    filteredAnalyses.forEach(analysis => {
       const key = format(parseISO(analysis.created_at), 'yyyy-MM');
       if (months[key]) {
         months[key].analyses++;
@@ -133,7 +217,7 @@ export function DashboardAnalytics() {
       }
     });
 
-    // Count new patients per month
+    // Count new patients per month (unaffected by filters)
     patients.forEach(patient => {
       const key = format(parseISO(patient.created_at), 'yyyy-MM');
       if (months[key]) {
@@ -142,9 +226,9 @@ export function DashboardAnalytics() {
     });
 
     return Object.values(months);
-  }, [analyses, patients, timeRange]);
+  }, [filteredAnalyses, patients, timeRange]);
 
-  // Dosage by region (radar chart)
+  // Dosage by region (radar chart) based on filtered analyses
   const dosageByRegion = useMemo(() => {
     const regions: Record<string, number> = {
       'Glabela': 0,
@@ -155,7 +239,7 @@ export function DashboardAnalytics() {
       'Mentual': 0,
     };
 
-    analyses.forEach(analysis => {
+    filteredAnalyses.forEach(analysis => {
       // Add procerus/corrugator to Glabela
       regions['Glabela'] += (analysis.procerus_dosage || 0) + (analysis.corrugator_dosage || 0);
 
@@ -184,13 +268,13 @@ export function DashboardAnalytics() {
       dosage: Math.round(dosage),
       fullMark: Math.max(...Object.values(regions)) * 1.2,
     }));
-  }, [analyses]);
+  }, [filteredAnalyses]);
 
-  // Product distribution (pie chart)
+  // Product distribution (pie chart) based on filtered analyses
   const productDistribution = useMemo(() => {
     const products: Record<string, number> = {};
     
-    analyses.forEach(analysis => {
+    filteredAnalyses.forEach(analysis => {
       const product = analysis.product_type || 'OnabotulinumtoxinA';
       products[product] = (products[product] || 0) + 1;
     });
@@ -201,13 +285,13 @@ export function DashboardAnalytics() {
             name.includes('Inco') ? 'Xeomin®' : name,
       value,
     }));
-  }, [analyses]);
+  }, [filteredAnalyses]);
 
-  // Top muscles treated (bar chart)
+  // Top muscles treated (bar chart) based on filtered analyses
   const muscleDistribution = useMemo(() => {
     const muscles: Record<string, number> = {};
     
-    analyses.forEach(analysis => {
+    filteredAnalyses.forEach(analysis => {
       // Add legacy dosages
       if (analysis.procerus_dosage) {
         muscles['procerus'] = (muscles['procerus'] || 0) + analysis.procerus_dosage;
@@ -232,7 +316,7 @@ export function DashboardAnalytics() {
       }))
       .sort((a, b) => b.dosage - a.dosage)
       .slice(0, 6);
-  }, [analyses]);
+  }, [filteredAnalyses]);
 
   if (isLoading) {
     return (
@@ -264,22 +348,153 @@ export function DashboardAnalytics() {
 
   return (
     <div className="space-y-6">
-      {/* Time Range Selector */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-semibold text-foreground">Analytics</h2>
-          <p className="text-sm text-muted-foreground">Métricas e tendências do seu consultório</p>
+      {/* Header with filters */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-xl font-semibold text-foreground">Analytics</h2>
+            <p className="text-sm text-muted-foreground">Métricas e tendências do seu consultório</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant={showFilters ? "secondary" : "outline"}
+              size="sm"
+              onClick={() => setShowFilters(!showFilters)}
+              className="gap-2"
+            >
+              <Filter className="w-4 h-4" />
+              Filtros
+              {hasActiveFilters && (
+                <Badge variant="default" className="ml-1 h-5 w-5 p-0 flex items-center justify-center text-xs">
+                  {[selectedPatient, selectedProduct, selectedRegion].filter(f => f !== "all").length}
+                </Badge>
+              )}
+            </Button>
+            <Select value={timeRange} onValueChange={setTimeRange}>
+              <SelectTrigger className="w-40">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="3">Últimos 3 meses</SelectItem>
+                <SelectItem value="6">Últimos 6 meses</SelectItem>
+                <SelectItem value="12">Último ano</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
-        <Select value={timeRange} onValueChange={setTimeRange}>
-          <SelectTrigger className="w-40">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="3">Últimos 3 meses</SelectItem>
-            <SelectItem value="6">Últimos 6 meses</SelectItem>
-            <SelectItem value="12">Último ano</SelectItem>
-          </SelectContent>
-        </Select>
+
+        {/* Advanced Filters Panel */}
+        {showFilters && (
+          <Card className="border-border/50 bg-muted/30">
+            <CardContent className="p-4">
+              <div className="flex flex-wrap items-end gap-4">
+                {/* Patient Filter */}
+                <div className="flex-1 min-w-[200px]">
+                  <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
+                    Paciente
+                  </label>
+                  <Select value={selectedPatient} onValueChange={setSelectedPatient}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Todos os pacientes" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todos os pacientes</SelectItem>
+                      {patients.map(patient => (
+                        <SelectItem key={patient.id} value={patient.id}>
+                          {patient.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Product Filter */}
+                <div className="flex-1 min-w-[200px]">
+                  <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
+                    Produto
+                  </label>
+                  <Select value={selectedProduct} onValueChange={setSelectedProduct}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Todos os produtos" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PRODUCTS.map(product => (
+                        <SelectItem key={product.value} value={product.value}>
+                          {product.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Region Filter */}
+                <div className="flex-1 min-w-[200px]">
+                  <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
+                    Região Facial
+                  </label>
+                  <Select value={selectedRegion} onValueChange={setSelectedRegion}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Todas as regiões" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {REGIONS.map(region => (
+                        <SelectItem key={region.value} value={region.value}>
+                          {region.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Clear Filters Button */}
+                {hasActiveFilters && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={clearFilters}
+                    className="gap-1 text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="w-4 h-4" />
+                    Limpar
+                  </Button>
+                )}
+              </div>
+
+              {/* Active Filters Summary */}
+              {hasActiveFilters && (
+                <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-border/50">
+                  {selectedPatient !== "all" && (
+                    <Badge variant="secondary" className="gap-1">
+                      Paciente: {patients.find(p => p.id === selectedPatient)?.name}
+                      <X 
+                        className="w-3 h-3 cursor-pointer hover:text-destructive" 
+                        onClick={() => setSelectedPatient("all")} 
+                      />
+                    </Badge>
+                  )}
+                  {selectedProduct !== "all" && (
+                    <Badge variant="secondary" className="gap-1">
+                      {PRODUCTS.find(p => p.value === selectedProduct)?.label}
+                      <X 
+                        className="w-3 h-3 cursor-pointer hover:text-destructive" 
+                        onClick={() => setSelectedProduct("all")} 
+                      />
+                    </Badge>
+                  )}
+                  {selectedRegion !== "all" && (
+                    <Badge variant="secondary" className="gap-1">
+                      {REGIONS.find(r => r.value === selectedRegion)?.label}
+                      <X 
+                        className="w-3 h-3 cursor-pointer hover:text-destructive" 
+                        onClick={() => setSelectedRegion("all")} 
+                      />
+                    </Badge>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {/* Stats Cards */}

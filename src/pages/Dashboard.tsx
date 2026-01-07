@@ -9,10 +9,11 @@ import { AnalysesGallery } from "@/components/AnalysesGallery";
 import { ProfileSettings } from "@/components/ProfileSettings";
 import { RecentAnalyses } from "@/components/RecentAnalyses";
 import { BeforeAfterComparison } from "@/components/BeforeAfterComparison";
+import { DashboardAnalytics } from "@/components/DashboardAnalytics";
 import Appointments from "@/pages/Appointments";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-import { Loader2, PlusCircle, Users, TrendingUp, Calendar } from "lucide-react";
+import { Loader2, PlusCircle, Users, TrendingUp, Calendar, BarChart3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -109,6 +110,14 @@ function DashboardHome() {
             >
               <TrendingUp className="w-4 h-4 mr-3" />
               Comparativo Antes/Depois
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full justify-start"
+              onClick={() => navigate("/dashboard/analytics")}
+            >
+              <BarChart3 className="w-4 h-4 mr-3" />
+              Analytics e Métricas
             </Button>
           </CardContent>
         </Card>
@@ -229,6 +238,15 @@ function ComparisonPage() {
   );
 }
 
+function AnalyticsPage() {
+  return (
+    <div className="space-y-6">
+      <h1 className="text-2xl font-light text-foreground">Analytics</h1>
+      <DashboardAnalytics />
+    </div>
+  );
+}
+
 function NewAnalysisPage() {
   const searchParams = new URLSearchParams(window.location.search);
   const patientId = searchParams.get('patientId');
@@ -282,6 +300,7 @@ const Dashboard = () => {
               <Route path="appointments" element={<Appointments />} />
               <Route path="protocols" element={<ProtocolsPage />} />
               <Route path="comparison" element={<ComparisonPage />} />
+              <Route path="analytics" element={<AnalyticsPage />} />
               <Route path="settings" element={<SettingsPage />} />
             </Routes>
           </div>

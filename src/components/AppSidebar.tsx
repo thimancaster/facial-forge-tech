@@ -1,4 +1,4 @@
-import { Users, PlusCircle, FileText, Settings, LogOut, LayoutDashboard, Calendar } from "lucide-react";
+import { Users, PlusCircle, FileText, Settings, LogOut, LayoutDashboard, Calendar, BarChart3 } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 import {
   Sidebar,
@@ -20,6 +20,7 @@ const menuItems = [
   { title: "Pacientes", url: "/dashboard/patients", icon: Users },
   { title: "Nova Análise", url: "/dashboard/new-analysis", icon: PlusCircle },
   { title: "Agenda", url: "/dashboard/appointments", icon: Calendar },
+  { title: "Analytics", url: "/dashboard/analytics", icon: BarChart3 },
   { title: "Protocolos", url: "/dashboard/protocols", icon: FileText },
   { title: "Configurações", url: "/dashboard/settings", icon: Settings },
 ];

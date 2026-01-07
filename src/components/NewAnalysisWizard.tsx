@@ -15,6 +15,7 @@ import { Face3DViewer, InjectionPoint } from "./Face3DViewer";
 import { DosageSafetyAlert } from "./DosageSafetyAlert";
 import { ProductSelector, TOXIN_PRODUCTS } from "./ProductSelector";
 import { TreatmentTemplates } from "./TreatmentTemplates";
+import { AnatomicalValidationAlert } from "./AnatomicalValidationAlert";
 import { exportAnalysisPdf, exportWithMapPdf } from "@/lib/exportPdf";
 
 interface PatientData {
@@ -1146,6 +1147,15 @@ export function NewAnalysisWizard({ initialPatientId }: NewAnalysisWizardProps) 
               </Card>
             </div>
           </div>
+
+          {/* Validação Anatômica */}
+          <AnatomicalValidationAlert 
+            injectionPoints={aiAnalysis.injectionPoints}
+            onHighlightPoints={(pointIds) => {
+              const point = aiAnalysis.injectionPoints.find(p => pointIds.includes(p.id));
+              if (point) setSelectedPoint(point);
+            }}
+          />
 
           {/* Alertas de Segurança */}
           <DosageSafetyAlert 

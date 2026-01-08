@@ -148,8 +148,20 @@ function DashboardHome() {
   );
 }
 
+interface DashboardPatient {
+  id: string;
+  name: string;
+  age: number | null;
+  gender: string | null;
+  email: string | null;
+  phone: string | null;
+  created_at: string;
+  observations?: string | null;
+  photo_url?: string | null;
+}
+
 function PatientsPage() {
-  const [patients, setPatients] = useState<any[]>([]);
+  const [patients, setPatients] = useState<DashboardPatient[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const { user } = useAuth();
 
@@ -177,7 +189,7 @@ function PatientsPage() {
           </CardContent>
         </Card>
       ) : (
-        <PatientsList patients={patients} onRefresh={fetchPatients} />
+        <PatientsList patients={patients as any} onRefresh={fetchPatients} />
       )}
     </div>
   );

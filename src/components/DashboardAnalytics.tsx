@@ -7,8 +7,8 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis, AreaChart, Area } from "recharts";
-import { TrendingUp, TrendingDown, Users, FileText, Calendar, Activity, Target, Syringe, Filter, X } from "lucide-react";
-import { format, subMonths, startOfMonth, endOfMonth, parseISO, isWithinInterval } from "date-fns";
+import { TrendingUp, Users, Syringe, Filter, X, BarChart3, FileText, Target, Activity } from "lucide-react";
+import { format, subMonths, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
 interface Analysis {
@@ -64,7 +64,7 @@ const MUSCLE_LABELS: Record<string, string> = {
 export function DashboardAnalytics() {
   const { user } = useAuth();
   const [analyses, setAnalyses] = useState<Analysis[]>([]);
-  const [patients, setPatients] = useState<any[]>([]);
+  const [patients, setPatients] = useState<{ id: string; name: string; gender: string | null; created_at: string }[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [timeRange, setTimeRange] = useState("6");
   

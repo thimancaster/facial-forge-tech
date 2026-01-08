@@ -333,7 +333,7 @@ export function AppointmentScheduler({ patientId, analysisId, onScheduled }: App
       </CardContent>
 
       <CardFooter className="flex justify-end gap-3">
-        <Button variant="outline" disabled={isLoading}>
+        <Button variant="outline" disabled={isLoading} onClick={onScheduled}>
           Cancelar
         </Button>
         <Button onClick={handleSubmit} disabled={isLoading || !selectedPatientId || !selectedDate}>

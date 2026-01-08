@@ -458,8 +458,10 @@ serve(async (req) => {
       );
     }
 
-    // Filter valid URLs
-    const validUrls = imageUrls.filter((u: string) => u && typeof u === 'string' && u.startsWith('http'));
+    // Filter valid URLs (support both http URLs and base64 data URIs)
+    const validUrls = imageUrls.filter((u: string) => 
+      u && typeof u === 'string' && (u.startsWith('http') || u.startsWith('data:image/'))
+    );
     if (validUrls.length === 0) {
       console.error("No valid image URLs found");
       return new Response(

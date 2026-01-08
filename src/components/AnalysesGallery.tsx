@@ -75,7 +75,8 @@ export function AnalysesGallery({ analyses, onRefresh }: AnalysesGalleryProps) {
   const getTotalDosage = (analysis: Analysis) => {
     const procerus = analysis.procerus_dosage || 0;
     const corrugator = analysis.corrugator_dosage || 0;
-    return procerus + corrugator * 2;
+    // corrugator já é o total bilateral, não multiplicar por 2
+    return procerus + corrugator;
   };
 
   if (analyses.length === 0) {

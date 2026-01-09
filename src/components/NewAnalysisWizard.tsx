@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Upload, ArrowLeft, ArrowRight, Check, User, Camera, Crosshair, Loader2, FolderOpen, X, Sparkles, Brain, Eye, Tag, FileDown, Settings2, MousePointer, Image } from "lucide-react";
+import { Upload, ArrowLeft, ArrowRight, Check, User, Camera, Crosshair, Loader2, FolderOpen, X, Sparkles, Brain, Eye, Tag, FileDown, Settings2, MousePointer, Image, Box, ImageIcon } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { CameraCapture, PhotoType } from "./CameraCapture";
@@ -17,6 +17,7 @@ import { ProductSelector, TOXIN_PRODUCTS } from "./ProductSelector";
 import { TreatmentTemplates } from "./TreatmentTemplates";
 import { AnatomicalValidationAlert } from "./AnatomicalValidationAlert";
 import { exportAnalysisPdf, exportWithMapPdf } from "@/lib/exportPdf";
+import { PhotoPointsOverlay } from "./PhotoPointsOverlay";
 
 interface PatientData {
   name: string;
@@ -142,6 +143,7 @@ export function NewAnalysisWizard({ initialPatientId }: NewAnalysisWizardProps) 
   const [showLabels, setShowLabels] = useState(true);
   const [showDangerZones, setShowDangerZones] = useState(true);
   const [isEditMode, setIsEditMode] = useState(false);
+  const [viewMode, setViewMode] = useState<"3d" | "2d">("3d");
   
   // Ref for 3D viewer container (for screenshot export)
   const viewer3DRef = useRef<HTMLDivElement>(null);

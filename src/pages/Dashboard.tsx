@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useNavigate, Routes, Route } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { DashboardStats } from "@/components/DashboardStats";
@@ -12,57 +13,26 @@ import { BeforeAfterComparison } from "@/components/BeforeAfterComparison";
 import { DashboardAnalytics } from "@/components/DashboardAnalytics";
 import Appointments from "@/pages/Appointments";
 import { useAuth } from "@/hooks/useAuth";
-import { supabase } from "@/integrations/supabase/client";
-import { Loader2, PlusCircle, Users, TrendingUp, Calendar, BarChart3 } from "lucide-react";
+import {
+  useDashboardStats,
+  useRecentAnalyses,
+  usePatients,
+  useAnalyses,
+  dashboardKeys,
+  type Analysis,
+} from "@/hooks/useDashboardQueries";
+import { Loader2, PlusCircle, Users, TrendingUp, BarChart3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-interface Analysis {
-  id: string;
-  patient_id: string;
-  procerus_dosage: number | null;
-  corrugator_dosage: number | null;
-  resting_photo_url: string | null;
-  glabellar_photo_url: string | null;
-  frontal_photo_url: string | null;
-  created_at: string;
-  status: string | null;
-  patients?: {
-    name: string;
-    age: number | null;
-  };
-}
-
 function DashboardHome() {
   const navigate = useNavigate();
-  const [stats, setStats] = useState({ patients: 0, analyses: 0 });
-  const [recentAnalyses, setRecentAnalyses] = useState<Analysis[]>([]);
   const { user } = useAuth();
 
-  useEffect(() => {
-    if (user) {
-      fetchData();
-    }
-  }, [user]);
+  const { data: stats, isLoading: statsLoading } = useDashboardStats(user?.id);
+  const { data: recentAnalyses, isLoading: analysesLoading } = useRecentAnalyses(user?.id);
 
-  const fetchData = async () => {
-    const [patientsRes, analysesRes, recentRes] = await Promise.all([
-      supabase.from("patients").select("id", { count: "exact", head: true }),
-      supabase.from("analyses").select("id", { count: "exact", head: true }),
-      supabase
-        .from("analyses")
-        .select("id, procerus_dosage, corrugator_dosage, resting_photo_url, created_at, patients(name)")
-        .order("created_at", { ascending: false })
-        .limit(5),
-    ]);
-
-    setStats({
-      patients: patientsRes.count || 0,
-      analyses: analysesRes.count || 0,
-    });
-
-    setRecentAnalyses((recentRes.data as Analysis[]) || []);
-  };
+  const isLoading = statsLoading || analysesLoading;
 
   return (
     <div className="space-y-6">
@@ -79,104 +49,93 @@ function DashboardHome() {
         </Button>
       </div>
 
-      <DashboardStats patientsCount={stats.patients} analysesCount={stats.analyses} />
+      {isLoading ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="w-6 h-6 animate-spin text-primary" />
+        </div>
+      ) : (
+        <>
+          <DashboardStats 
+            patientsCount={stats?.patients || 0} 
+            analysesCount={stats?.analyses || 0} 
+          />
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card className="border-border/50">
-          <CardHeader>
-            <CardTitle className="text-lg font-medium">Ações Rápidas</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <Button
-              variant="outline"
-              className="w-full justify-start"
-              onClick={() => navigate("/dashboard/new-analysis")}
-            >
-              <PlusCircle className="w-4 h-4 mr-3" />
-              Iniciar Nova Análise Facial
-            </Button>
-            <Button
-              variant="outline"
-              className="w-full justify-start"
-              onClick={() => navigate("/dashboard/patients")}
-            >
-              <Users className="w-4 h-4 mr-3" />
-              Ver Pacientes Cadastrados
-            </Button>
-            <Button
-              variant="outline"
-              className="w-full justify-start"
-              onClick={() => navigate("/dashboard/comparison")}
-            >
-              <TrendingUp className="w-4 h-4 mr-3" />
-              Comparativo Antes/Depois
-            </Button>
-            <Button
-              variant="outline"
-              className="w-full justify-start"
-              onClick={() => navigate("/dashboard/analytics")}
-            >
-              <BarChart3 className="w-4 h-4 mr-3" />
-              Analytics e Métricas
-            </Button>
-          </CardContent>
-        </Card>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <Card className="border-border/50">
+              <CardHeader>
+                <CardTitle className="text-lg font-medium">Ações Rápidas</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <Button
+                  variant="outline"
+                  className="w-full justify-start"
+                  onClick={() => navigate("/dashboard/new-analysis")}
+                >
+                  <PlusCircle className="w-4 h-4 mr-3" />
+                  Iniciar Nova Análise Facial
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full justify-start"
+                  onClick={() => navigate("/dashboard/patients")}
+                >
+                  <Users className="w-4 h-4 mr-3" />
+                  Ver Pacientes Cadastrados
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full justify-start"
+                  onClick={() => navigate("/dashboard/comparison")}
+                >
+                  <TrendingUp className="w-4 h-4 mr-3" />
+                  Comparativo Antes/Depois
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full justify-start"
+                  onClick={() => navigate("/dashboard/analytics")}
+                >
+                  <BarChart3 className="w-4 h-4 mr-3" />
+                  Analytics e Métricas
+                </Button>
+              </CardContent>
+            </Card>
 
-        <RecentAnalyses analyses={recentAnalyses} />
-      </div>
+            <RecentAnalyses analyses={(recentAnalyses as Analysis[]) || []} />
+          </div>
 
-      <Card className="border-border/50">
-        <CardHeader>
-          <CardTitle className="text-lg font-medium">Guia Rápido</CardTitle>
-        </CardHeader>
-        <CardContent className="text-sm text-muted-foreground space-y-2">
-          <p>
-            <strong>1.</strong> Cadastre seu paciente com dados básicos
-          </p>
-          <p>
-            <strong>2.</strong> Tire as 3 fotos do protocolo (repouso, glabelar, frontal)
-          </p>
-          <p>
-            <strong>3.</strong> O sistema sugere dosagens baseadas na análise muscular
-          </p>
-          <p>
-            <strong>4.</strong> Ajuste conforme necessário e salve o protocolo
-          </p>
-        </CardContent>
-      </Card>
+          <Card className="border-border/50">
+            <CardHeader>
+              <CardTitle className="text-lg font-medium">Guia Rápido</CardTitle>
+            </CardHeader>
+            <CardContent className="text-sm text-muted-foreground space-y-2">
+              <p>
+                <strong>1.</strong> Cadastre seu paciente com dados básicos
+              </p>
+              <p>
+                <strong>2.</strong> Tire as 3 fotos do protocolo (repouso, glabelar, frontal)
+              </p>
+              <p>
+                <strong>3.</strong> O sistema sugere dosagens baseadas na análise muscular
+              </p>
+              <p>
+                <strong>4.</strong> Ajuste conforme necessário e salve o protocolo
+              </p>
+            </CardContent>
+          </Card>
+        </>
+      )}
     </div>
   );
 }
 
-interface DashboardPatient {
-  id: string;
-  name: string;
-  age: number | null;
-  gender: string | null;
-  email: string | null;
-  phone: string | null;
-  created_at: string;
-  observations?: string | null;
-  photo_url?: string | null;
-}
-
 function PatientsPage() {
-  const [patients, setPatients] = useState<DashboardPatient[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const { data: patients, isLoading } = usePatients(user?.id);
 
-  useEffect(() => {
-    if (user) fetchPatients();
-  }, [user]);
-
-  const fetchPatients = async () => {
-    setIsLoading(true);
-    const { data } = await supabase
-      .from("patients")
-      .select("*")
-      .order("created_at", { ascending: false });
-    setPatients(data || []);
-    setIsLoading(false);
+  const handleRefresh = () => {
+    queryClient.invalidateQueries({ queryKey: dashboardKeys.patients() });
   };
 
   return (
@@ -189,31 +148,19 @@ function PatientsPage() {
           </CardContent>
         </Card>
       ) : (
-        <PatientsList patients={patients as any} onRefresh={fetchPatients} />
+        <PatientsList patients={patients as any || []} onRefresh={handleRefresh} />
       )}
     </div>
   );
 }
 
 function ProtocolsPage() {
-  const [analyses, setAnalyses] = useState<Analysis[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const { data: analyses, isLoading } = useAnalyses(user?.id);
 
-  useEffect(() => {
-    if (user) fetchAnalyses();
-  }, [user]);
-
-  const fetchAnalyses = async () => {
-    setIsLoading(true);
-    const { data } = await supabase
-      .from("analyses")
-      .select(
-        "id, patient_id, procerus_dosage, corrugator_dosage, resting_photo_url, glabellar_photo_url, frontal_photo_url, created_at, status, patients(name, age)"
-      )
-      .order("created_at", { ascending: false });
-    setAnalyses((data as Analysis[]) || []);
-    setIsLoading(false);
+  const handleRefresh = () => {
+    queryClient.invalidateQueries({ queryKey: dashboardKeys.analyses() });
   };
 
   return (
@@ -226,7 +173,7 @@ function ProtocolsPage() {
           </CardContent>
         </Card>
       ) : (
-        <AnalysesGallery analyses={analyses} onRefresh={fetchAnalyses} />
+        <AnalysesGallery analyses={analyses || []} onRefresh={handleRefresh} />
       )}
     </div>
   );

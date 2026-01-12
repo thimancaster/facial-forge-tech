@@ -943,79 +943,137 @@ export function NewAnalysisWizard({ initialPatientId }: NewAnalysisWizardProps) 
           </Card>
 
           <div className="grid grid-cols-1 xl:grid-cols-5 gap-6">
-            {/* 3D Face Viewer - Larger */}
+            {/* 3D/2D Viewer - Larger */}
             <Card className="xl:col-span-3 border-border/50 overflow-hidden">
               <CardHeader className="pb-2">
                 <div className="flex items-center justify-between flex-wrap gap-2">
                   <CardTitle className="flex items-center gap-3 text-base">
-                    <Crosshair className="w-5 h-5 text-primary" />
-                    Modelo Anatômico 3D
+                    {viewMode === "3d" ? (
+                      <>
+                        <Box className="w-5 h-5 text-primary" />
+                        Modelo Anatômico 3D
+                      </>
+                    ) : (
+                      <>
+                        <ImageIcon className="w-5 h-5 text-primary" />
+                        Foto do Paciente
+                      </>
+                    )}
                   </CardTitle>
                   <div className="flex items-center gap-4 flex-wrap">
-                    <div className="flex items-center gap-2">
-                      <Switch
-                        id="edit-mode"
-                        checked={isEditMode}
-                        onCheckedChange={setIsEditMode}
-                      />
-                      <Label htmlFor="edit-mode" className="text-xs flex items-center gap-1 cursor-pointer text-amber-600">
-                        <MousePointer className="w-3.5 h-3.5" />
-                        Editar
-                      </Label>
+                    {/* View Mode Toggle */}
+                    <div className="flex items-center gap-1 p-1 bg-muted rounded-lg">
+                      <Button
+                        variant={viewMode === "3d" ? "default" : "ghost"}
+                        size="sm"
+                        onClick={() => setViewMode("3d")}
+                        className="h-7 px-3 text-xs"
+                      >
+                        <Box className="w-3.5 h-3.5 mr-1" />
+                        3D
+                      </Button>
+                      <Button
+                        variant={viewMode === "2d" ? "default" : "ghost"}
+                        size="sm"
+                        onClick={() => setViewMode("2d")}
+                        className="h-7 px-3 text-xs"
+                        disabled={!photoUrls.resting}
+                      >
+                        <ImageIcon className="w-3.5 h-3.5 mr-1" />
+                        Foto
+                      </Button>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Switch
-                        id="show-muscles"
-                        checked={showMuscles}
-                        onCheckedChange={setShowMuscles}
-                      />
-                      <Label htmlFor="show-muscles" className="text-xs flex items-center gap-1 cursor-pointer">
-                        <Eye className="w-3.5 h-3.5" />
-                        Músculos
-                      </Label>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Switch
-                        id="show-labels"
-                        checked={showLabels}
-                        onCheckedChange={setShowLabels}
-                      />
-                      <Label htmlFor="show-labels" className="text-xs flex items-center gap-1 cursor-pointer">
-                        <Tag className="w-3.5 h-3.5" />
-                        Legendas
-                      </Label>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Switch
-                        id="show-danger-zones"
-                        checked={showDangerZones}
-                        onCheckedChange={setShowDangerZones}
-                      />
-                      <Label htmlFor="show-danger-zones" className="text-xs flex items-center gap-1 cursor-pointer text-red-500">
-                        ⚠️ Zonas
-                      </Label>
-                    </div>
+                    
+                    {viewMode === "3d" && (
+                      <>
+                        <div className="flex items-center gap-2">
+                          <Switch
+                            id="edit-mode"
+                            checked={isEditMode}
+                            onCheckedChange={setIsEditMode}
+                          />
+                          <Label htmlFor="edit-mode" className="text-xs flex items-center gap-1 cursor-pointer text-amber-600">
+                            <MousePointer className="w-3.5 h-3.5" />
+                            Editar
+                          </Label>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Switch
+                            id="show-muscles"
+                            checked={showMuscles}
+                            onCheckedChange={setShowMuscles}
+                          />
+                          <Label htmlFor="show-muscles" className="text-xs flex items-center gap-1 cursor-pointer">
+                            <Eye className="w-3.5 h-3.5" />
+                            Músculos
+                          </Label>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Switch
+                            id="show-labels"
+                            checked={showLabels}
+                            onCheckedChange={setShowLabels}
+                          />
+                          <Label htmlFor="show-labels" className="text-xs flex items-center gap-1 cursor-pointer">
+                            <Tag className="w-3.5 h-3.5" />
+                            Legendas
+                          </Label>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Switch
+                            id="show-danger-zones"
+                            checked={showDangerZones}
+                            onCheckedChange={setShowDangerZones}
+                          />
+                          <Label htmlFor="show-danger-zones" className="text-xs flex items-center gap-1 cursor-pointer text-red-500">
+                            ⚠️ Zonas
+                          </Label>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
-                {isEditMode && (
+                {viewMode === "3d" && isEditMode && (
                   <p className="text-xs text-amber-600 mt-2 bg-amber-50 rounded px-3 py-1.5 border border-amber-200">
                     💡 Clique no modelo 3D para adicionar novos pontos de injeção. Dosagem base: {Math.round(4 * conversionFactor)}U ({TOXIN_PRODUCTS.find(p => p.id === selectedProduct)?.name})
+                  </p>
+                )}
+                {viewMode === "2d" && (
+                  <p className="text-xs text-muted-foreground mt-2 bg-muted/50 rounded px-3 py-1.5">
+                    🔍 Use o scroll para zoom • Arraste para mover • Clique em um ponto para ver detalhes
                   </p>
                 )}
               </CardHeader>
               <CardContent className="p-2">
                 <div ref={viewer3DRef} className="h-[500px] relative">
-                  <Face3DViewer
-                    injectionPoints={aiAnalysis.injectionPoints}
-                    onPointClick={setSelectedPoint}
-                    onAddPoint={handleAddPoint}
-                    showMuscles={showMuscles}
-                    showLabels={showLabels}
-                    showDangerZones={showDangerZones}
-                    safetyZones={aiAnalysis.safetyZones}
-                    conversionFactor={conversionFactor}
-                    isEditMode={isEditMode}
-                  />
+                  {viewMode === "3d" ? (
+                    <Face3DViewer
+                      injectionPoints={aiAnalysis.injectionPoints}
+                      onPointClick={setSelectedPoint}
+                      onAddPoint={handleAddPoint}
+                      showMuscles={showMuscles}
+                      showLabels={showLabels}
+                      showDangerZones={showDangerZones}
+                      safetyZones={aiAnalysis.safetyZones}
+                      conversionFactor={conversionFactor}
+                      isEditMode={isEditMode}
+                    />
+                  ) : photoUrls.resting ? (
+                    <PhotoPointsOverlay
+                      photoUrl={photoUrls.resting}
+                      injectionPoints={aiAnalysis.injectionPoints}
+                      onPointClick={setSelectedPoint}
+                      selectedPointId={selectedPoint?.id}
+                    />
+                  ) : (
+                    <div className="h-full flex items-center justify-center bg-muted/30 rounded-lg border-2 border-dashed border-border">
+                      <div className="text-center text-muted-foreground">
+                        <ImageIcon className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                        <p className="text-sm font-medium">Nenhuma foto em repouso disponível</p>
+                        <p className="text-xs mt-1">Volte à etapa de fotos para adicionar</p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>

@@ -1,4 +1,5 @@
 import { InjectionPoint, SafetyZone } from "@/components/Face3DViewer";
+import { getZoneFromMuscle } from "@/lib/muscleUtils";
 
 export interface ValidationResult {
   isValid: boolean;
@@ -68,33 +69,6 @@ const SPATIAL_HIERARCHY = [
   { zone: "perioral", minY: 55, maxY: 75 },
   { zone: "mentalis", minY: 70, maxY: 95 },
 ];
-
-// Get zone from muscle name
-function getZoneFromMuscle(muscle: string): string {
-  const muscleLower = muscle.toLowerCase();
-  if (muscleLower.includes("procerus") || muscleLower.includes("prócero") || muscleLower.includes("corrugador") || muscleLower.includes("corrugator")) {
-    return "glabella";
-  }
-  if (muscleLower.includes("frontal") || muscleLower.includes("frontalis")) {
-    return "frontalis";
-  }
-  if (muscleLower.includes("orbicular") && (muscleLower.includes("olho") || muscleLower.includes("oculi"))) {
-    return "periorbital";
-  }
-  if (muscleLower.includes("nasal") || muscleLower.includes("nasalis")) {
-    return "nasal";
-  }
-  if (muscleLower.includes("oris") || muscleLower.includes("boca") || muscleLower.includes("depressor") || muscleLower.includes("labial")) {
-    return "perioral";
-  }
-  if (muscleLower.includes("mentalis") || muscleLower.includes("mentual") || muscleLower.includes("queixo")) {
-    return "mentalis";
-  }
-  if (muscleLower.includes("masseter")) {
-    return "masseter";
-  }
-  return "unknown";
-}
 
 // Check bilateral symmetry
 function checkSymmetry(points: InjectionPoint[]): ValidationWarning[] {

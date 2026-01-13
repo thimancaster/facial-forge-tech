@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Eye, EyeOff, Layers, MousePointer, Plus, Bone, CircleDot, AlertTriangle, Info } from "lucide-react";
 import { CollapsiblePanel } from "@/components/ui/collapsible-panel";
+import { getZoneFromMuscle, AnatomicalZone, MUSCLE_LABELS } from "@/lib/muscleUtils";
 
 export interface InjectionPoint {
   id: string;
@@ -54,20 +55,20 @@ const MUSCLE_DATA: Record<string, {
   label: string;
   labelPosition: [number, number, number];
 }> = {
-  procerus: { color: "#B85450", label: "Prócero", labelPosition: [0, 0.9, 1.6] },
-  corrugator_left: { color: "#A04040", label: "Corrugador Esq.", labelPosition: [-0.8, 0.7, 1.3] },
-  corrugator_right: { color: "#A04040", label: "Corrugador Dir.", labelPosition: [0.8, 0.7, 1.3] },
-  frontalis: { color: "#C06060", label: "Frontal", labelPosition: [0, 1.5, 1.0] },
-  orbicularis_oculi_left: { color: "#9F5050", label: "Orbicular do Olho Esq.", labelPosition: [-1.0, 0.3, 1.2] },
-  orbicularis_oculi_right: { color: "#9F5050", label: "Orbicular do Olho Dir.", labelPosition: [1.0, 0.3, 1.2] },
-  nasalis: { color: "#B06060", label: "Nasal", labelPosition: [0, 0.1, 1.8] },
-  levator_labii: { color: "#A85555", label: "Levantador do Lábio", labelPosition: [-0.5, -0.2, 1.5] },
-  zygomaticus_major: { color: "#AA5858", label: "Zigomático Maior", labelPosition: [0.9, -0.3, 1.0] },
-  zygomaticus_minor: { color: "#A55252", label: "Zigomático Menor", labelPosition: [-0.9, -0.1, 1.1] },
-  orbicularis_oris: { color: "#B06565", label: "Orbicular da Boca", labelPosition: [0, -0.7, 1.5] },
-  depressor_anguli: { color: "#9A4848", label: "Depressor do Ângulo", labelPosition: [0.7, -0.9, 1.1] },
-  mentalis: { color: "#A55050", label: "Mentual", labelPosition: [0, -1.2, 1.3] },
-  masseter: { color: "#8B4545", label: "Masseter", labelPosition: [1.1, -0.5, 0.6] }
+  procerus: { color: "#B85450", label: MUSCLE_LABELS.procerus || "Prócero", labelPosition: [0, 0.9, 1.6] },
+  corrugator_left: { color: "#A04040", label: MUSCLE_LABELS.corrugator_left || "Corrugador Esq.", labelPosition: [-0.8, 0.7, 1.3] },
+  corrugator_right: { color: "#A04040", label: MUSCLE_LABELS.corrugator_right || "Corrugador Dir.", labelPosition: [0.8, 0.7, 1.3] },
+  frontalis: { color: "#C06060", label: MUSCLE_LABELS.frontalis || "Frontal", labelPosition: [0, 1.5, 1.0] },
+  orbicularis_oculi_left: { color: "#9F5050", label: MUSCLE_LABELS.orbicularis_oculi_left || "Orbicular do Olho Esq.", labelPosition: [-1.0, 0.3, 1.2] },
+  orbicularis_oculi_right: { color: "#9F5050", label: MUSCLE_LABELS.orbicularis_oculi_right || "Orbicular do Olho Dir.", labelPosition: [1.0, 0.3, 1.2] },
+  nasalis: { color: "#B06060", label: MUSCLE_LABELS.nasalis || "Nasal", labelPosition: [0, 0.1, 1.8] },
+  levator_labii: { color: "#A85555", label: MUSCLE_LABELS.levator_labii || "Levantador do Lábio", labelPosition: [-0.5, -0.2, 1.5] },
+  zygomaticus_major: { color: "#AA5858", label: MUSCLE_LABELS.zygomaticus_major || "Zigomático Maior", labelPosition: [0.9, -0.3, 1.0] },
+  zygomaticus_minor: { color: "#A55252", label: MUSCLE_LABELS.zygomaticus_minor || "Zigomático Menor", labelPosition: [-0.9, -0.1, 1.1] },
+  orbicularis_oris: { color: "#B06565", label: MUSCLE_LABELS.orbicularis_oris || "Orbicular da Boca", labelPosition: [0, -0.7, 1.5] },
+  depressor_anguli: { color: "#9A4848", label: MUSCLE_LABELS.depressor_anguli || "Depressor do Ângulo", labelPosition: [0.7, -0.9, 1.1] },
+  mentalis: { color: "#A55050", label: MUSCLE_LABELS.mentalis || "Mentual", labelPosition: [0, -1.2, 1.3] },
+  masseter: { color: "#8B4545", label: MUSCLE_LABELS.masseter || "Masseter", labelPosition: [1.1, -0.5, 0.6] }
 };
 
 // Danger zones with 3D positions
@@ -114,22 +115,6 @@ const DANGER_ZONES = [
   }
 ];
 
-// Zone type for anatomical mapping
-type AnatomicalZone = 'glabella' | 'frontalis' | 'periorbital' | 'nasal' | 'perioral' | 'mentalis' | 'masseter';
-
-// Get zone from muscle name
-function getZoneFromMuscle(muscle: string): AnatomicalZone {
-  const muscleLower = muscle.toLowerCase();
-  if (muscleLower.includes('procerus') || muscleLower.includes('prócero') || muscleLower.includes('corrugador') || muscleLower.includes('corrugator')) return 'glabella';
-  if (muscleLower.includes('frontal') || muscleLower.includes('frontalis')) return 'frontalis';
-  if (muscleLower.includes('orbicular') && (muscleLower.includes('olho') || muscleLower.includes('oculi'))) return 'periorbital';
-  if (muscleLower.includes('nasal') || muscleLower.includes('nasalis')) return 'nasal';
-  if (muscleLower.includes('oris') || muscleLower.includes('boca') || muscleLower.includes('depressor') || muscleLower.includes('labial')) return 'perioral';
-  if (muscleLower.includes('mentalis') || muscleLower.includes('mentual') || muscleLower.includes('queixo')) return 'mentalis';
-  if (muscleLower.includes('masseter')) return 'masseter';
-  return 'glabella';
-}
-
 // ============ GLB CALIBRATION CONSTANTS ============
 // These values calibrate injection points for the face-anatomy.glb model
 const GLB_CALIBRATION = {
@@ -147,7 +132,8 @@ const ZONE_CONFIG_GLB: Record<AnatomicalZone, { baseZ: number; curveFactor: numb
   nasal: { baseZ: 1.70, curveFactor: 0.08, yOffset: 0.1 },       // Most forward (nose tip)
   perioral: { baseZ: 1.55, curveFactor: 0.15, yOffset: 0.0 },    // Forward mouth area
   mentalis: { baseZ: 1.35, curveFactor: 0.25, yOffset: -0.1 },   // Chin curves back
-  masseter: { baseZ: 0.75, curveFactor: 0.35, yOffset: 0.0 }     // Side of face
+  masseter: { baseZ: 0.75, curveFactor: 0.35, yOffset: 0.0 },    // Side of face
+  unknown: { baseZ: 1.4, curveFactor: 0.15, yOffset: 0.0 }       // Default fallback
 };
 
 // Zone-specific configuration for procedural model (fallback)
@@ -158,7 +144,8 @@ const ZONE_CONFIG_PROCEDURAL: Record<AnatomicalZone, { baseZ: number; curveFacto
   nasal: { baseZ: 1.55, curveFactor: 0.10, yOffset: 0.1 },
   perioral: { baseZ: 1.4, curveFactor: 0.20, yOffset: 0.0 },
   mentalis: { baseZ: 1.2, curveFactor: 0.30, yOffset: -0.1 },
-  masseter: { baseZ: 0.6, curveFactor: 0.40, yOffset: 0.0 }
+  masseter: { baseZ: 0.6, curveFactor: 0.40, yOffset: 0.0 },
+  unknown: { baseZ: 1.2, curveFactor: 0.20, yOffset: 0.0 }       // Default fallback
 };
 
 // Convert 2D percentage coordinates to 3D positions for GLB model

@@ -117,23 +117,45 @@ const DANGER_ZONES = [
 
 // ============ GLB CALIBRATION CONSTANTS ============
 // These values calibrate injection points for the face-anatomy.glb model
+// Carefully tuned to match the anatomical surface of face-anatomy.glb
 const GLB_CALIBRATION = {
-  scaleX: 1.4,      // X axis scale
-  scaleY: 1.8,      // Y axis scale  
-  offsetY: 0.2,     // Y offset to center
-  zOffset: 0.15,    // Push points slightly forward to be in front of model
+  scaleX: 1.35,     // X axis scale (slightly reduced for tighter fit)
+  scaleY: 1.7,      // Y axis scale (adjusted for vertical positioning)
+  offsetY: 0.15,    // Y offset to center on the model
+  zBase: 0.85,      // Base Z depth - points sit ON the surface, not floating
 };
 
 // Zone-specific curvature configuration for GLB model
-const ZONE_CONFIG_GLB: Record<AnatomicalZone, { baseZ: number; curveFactor: number; yOffset: number }> = {
-  glabella: { baseZ: 1.55, curveFactor: 0.12, yOffset: 0.2 },    // More forward for glabella
-  frontalis: { baseZ: 1.15, curveFactor: 0.20, yOffset: 0.3 },   // Higher forehead curve
-  periorbital: { baseZ: 1.35, curveFactor: 0.25, yOffset: 0.15 },// Slight forward
-  nasal: { baseZ: 1.70, curveFactor: 0.08, yOffset: 0.1 },       // Most forward (nose tip)
-  perioral: { baseZ: 1.55, curveFactor: 0.15, yOffset: 0.0 },    // Forward mouth area
-  mentalis: { baseZ: 1.35, curveFactor: 0.25, yOffset: -0.1 },   // Chin curves back
-  masseter: { baseZ: 0.75, curveFactor: 0.35, yOffset: 0.0 },    // Side of face
-  unknown: { baseZ: 1.4, curveFactor: 0.15, yOffset: 0.0 }       // Default fallback
+// Each zone has calibrated values to match the actual 3D mesh surface
+const ZONE_CONFIG_GLB: Record<AnatomicalZone, { 
+  baseZ: number;      // Base depth for this zone
+  curveFactor: number; // How much the surface curves from center to sides
+  yOffset: number;    // Vertical adjustment specific to this zone
+  xScale?: number;    // Optional X scale adjustment for this zone
+}> = {
+  // Glabella: between eyebrows, relatively flat, sits slightly forward
+  glabella: { baseZ: 1.02, curveFactor: 0.08, yOffset: 0.0, xScale: 0.9 },
+  
+  // Frontalis: forehead, curves back significantly at sides and top
+  frontalis: { baseZ: 0.72, curveFactor: 0.18, yOffset: 0.25, xScale: 1.0 },
+  
+  // Periorbital: around eyes, needs to follow orbital curvature
+  periorbital: { baseZ: 0.92, curveFactor: 0.22, yOffset: 0.05, xScale: 1.1 },
+  
+  // Nasal: nose area, most forward point of face
+  nasal: { baseZ: 1.25, curveFactor: 0.05, yOffset: -0.05, xScale: 0.7 },
+  
+  // Perioral: around mouth, curves moderately
+  perioral: { baseZ: 1.08, curveFactor: 0.12, yOffset: -0.15, xScale: 0.85 },
+  
+  // Mentalis: chin, curves back
+  mentalis: { baseZ: 0.95, curveFactor: 0.20, yOffset: -0.25, xScale: 0.8 },
+  
+  // Masseter: side of jaw, significantly recessed
+  masseter: { baseZ: 0.45, curveFactor: 0.30, yOffset: -0.1, xScale: 1.2 },
+  
+  // Unknown: default fallback
+  unknown: { baseZ: 0.90, curveFactor: 0.12, yOffset: 0.0, xScale: 1.0 }
 };
 
 // Zone-specific configuration for procedural model (fallback)
@@ -145,23 +167,43 @@ const ZONE_CONFIG_PROCEDURAL: Record<AnatomicalZone, { baseZ: number; curveFacto
   perioral: { baseZ: 1.4, curveFactor: 0.20, yOffset: 0.0 },
   mentalis: { baseZ: 1.2, curveFactor: 0.30, yOffset: -0.1 },
   masseter: { baseZ: 0.6, curveFactor: 0.40, yOffset: 0.0 },
-  unknown: { baseZ: 1.2, curveFactor: 0.20, yOffset: 0.0 }       // Default fallback
+  unknown: { baseZ: 1.2, curveFactor: 0.20, yOffset: 0.0 }
 };
 
-// Convert 2D percentage coordinates to 3D positions for GLB model
+/**
+ * Convert 2D percentage coordinates (0-100) to 3D world coordinates for the GLB model.
+ * Uses zone-specific calibration to ensure points sit precisely on the anatomical surface.
+ * 
+ * @param x - X coordinate as percentage (0 = left edge, 50 = center, 100 = right edge)
+ * @param y - Y coordinate as percentage (0 = top, 50 = middle, 100 = bottom)
+ * @param zone - Anatomical zone for zone-specific curvature
+ * @returns [x3d, y3d, z3d] - 3D world coordinates
+ */
 function percentTo3DForGLB(x: number, y: number, zone?: AnatomicalZone): [number, number, number] {
-  const x3d = ((x - 50) / 50) * GLB_CALIBRATION.scaleX;
-  const y3d = ((50 - y) / 50) * GLB_CALIBRATION.scaleY + GLB_CALIBRATION.offsetY;
+  const effectiveZone = zone || 'unknown';
+  const config = ZONE_CONFIG_GLB[effectiveZone];
   
-  if (zone && ZONE_CONFIG_GLB[zone]) {
-    const config = ZONE_CONFIG_GLB[zone];
-    const z3d = config.baseZ - Math.pow(Math.abs(x3d), 2) * config.curveFactor + GLB_CALIBRATION.zOffset;
-    return [x3d, y3d + config.yOffset, z3d];
-  }
+  // Apply zone-specific X scaling
+  const xScale = config.xScale ?? 1.0;
   
-  // Default curvature with forward offset
-  const curveFactor = 1 - Math.pow(Math.abs(x3d) / 1.4, 2) * 0.4;
-  const z3d = Math.sqrt(Math.max(0.1, 2.0 - x3d * x3d * 0.5 - Math.pow((y3d - 0.3) / 2, 2) * 0.3)) * curveFactor + 0.4 + GLB_CALIBRATION.zOffset;
+  // Convert percentage to normalized coordinates (-1 to 1)
+  const normalizedX = (x - 50) / 50;
+  const normalizedY = (50 - y) / 50;
+  
+  // Apply global calibration with zone-specific adjustments
+  const x3d = normalizedX * GLB_CALIBRATION.scaleX * xScale;
+  const y3d = normalizedY * GLB_CALIBRATION.scaleY + GLB_CALIBRATION.offsetY + config.yOffset;
+  
+  // Calculate Z using spherical-like curvature that matches the GLB mesh
+  // The further from center (larger |x3d|), the more the surface curves back
+  const lateralCurvature = Math.pow(Math.abs(x3d), 2) * config.curveFactor;
+  
+  // Add vertical curvature component (forehead curves back at top)
+  const verticalFactor = effectiveZone === 'frontalis' ? Math.max(0, normalizedY * 0.15) : 0;
+  
+  // Combine base Z with curvature adjustments
+  const z3d = GLB_CALIBRATION.zBase + config.baseZ - lateralCurvature - verticalFactor;
+  
   return [x3d, y3d, z3d];
 }
 

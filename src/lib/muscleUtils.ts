@@ -93,9 +93,48 @@ export const MUSCLE_LABELS: Record<string, string> = {
 };
 
 /**
+ * Regions grouping muscles for analytics and PDF export
+ */
+export const MUSCLE_REGIONS: Record<string, string[]> = {
+  "Glabelar": ["procerus", "corrugator_left", "corrugator_right", "corrugator"],
+  "Frontal": ["frontalis"],
+  "Periorbital": ["orbicularis_oculi_left", "orbicularis_oculi_right", "orbicularis_oculi"],
+  "Nasal": ["nasalis"],
+  "Perioral": ["orbicularis_oris", "levator_labii", "depressor_anguli", "zygomaticus_major", "zygomaticus_minor"],
+  "Terço Inferior": ["mentalis", "masseter"],
+};
+
+/**
  * Gets the display label for a muscle
  */
 export function getMuscleLabel(muscle: string): string {
   const baseMuscle = muscle.replace(/_left|_right|_esq|_dir/gi, '');
   return MUSCLE_LABELS[baseMuscle] || MUSCLE_LABELS[muscle] || muscle;
+}
+
+/**
+ * Determines region from muscle name for filtering
+ */
+export function getRegionFromMuscle(muscle: string): string {
+  const muscleLower = muscle.toLowerCase();
+  
+  if (muscleLower.includes('procerus') || muscleLower.includes('corrugator')) {
+    return 'glabela';
+  }
+  if (muscleLower.includes('frontal')) {
+    return 'frontal';
+  }
+  if (muscleLower.includes('orbicular') && (muscleLower.includes('oculi') || muscleLower.includes('olho'))) {
+    return 'periorbital';
+  }
+  if (muscleLower.includes('nasal')) {
+    return 'nasal';
+  }
+  if (muscleLower.includes('oris') || muscleLower.includes('depressor') || muscleLower.includes('labial') || muscleLower.includes('zygom')) {
+    return 'perioral';
+  }
+  if (muscleLower.includes('mentalis') || muscleLower.includes('mentual') || muscleLower.includes('masseter')) {
+    return 'mentual';
+  }
+  return 'unknown';
 }

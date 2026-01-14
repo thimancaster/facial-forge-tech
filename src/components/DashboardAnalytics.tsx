@@ -10,6 +10,7 @@ import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, Cart
 import { TrendingUp, Users, Syringe, Filter, X, BarChart3, FileText, Target, Activity } from "lucide-react";
 import { format, subMonths, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { MUSCLE_LABELS, getRegionFromMuscle } from "@/lib/muscleUtils";
 
 interface Analysis {
   id: string;
@@ -46,20 +47,6 @@ const PRODUCTS = [
 ];
 
 const COLORS = ['#8B5CF6', '#F59E0B', '#EC4899', '#06B6D4', '#10B981', '#F43F5E', '#6366F1', '#84CC16'];
-
-const MUSCLE_LABELS: Record<string, string> = {
-  procerus: 'Prócero',
-  corrugator_left: 'Corrugador Esq.',
-  corrugator_right: 'Corrugador Dir.',
-  corrugator: 'Corrugadores',
-  frontalis: 'Frontal',
-  orbicularis_oculi_left: 'Orbicular Esq.',
-  orbicularis_oculi_right: 'Orbicular Dir.',
-  orbicularis_oculi: 'Orbicular Olhos',
-  nasalis: 'Nasal',
-  mentalis: 'Mentual',
-  masseter: 'Masseter',
-};
 
 export function DashboardAnalytics() {
   const { user } = useAuth();
@@ -127,22 +114,7 @@ export function DashboardAnalytics() {
         const points = Array.isArray(analysis.ai_injection_points) ? analysis.ai_injection_points : [];
         const hasRegion = points.some((point: any) => {
           const muscle = point.muscle?.toLowerCase() || '';
-          switch (selectedRegion) {
-            case 'glabela':
-              return muscle.includes('procerus') || muscle.includes('corrugator');
-            case 'frontal':
-              return muscle.includes('frontal');
-            case 'periorbital':
-              return muscle.includes('orbicular') && (muscle.includes('oculi') || muscle.includes('olho'));
-            case 'nasal':
-              return muscle.includes('nasal');
-            case 'perioral':
-              return muscle.includes('oris') || muscle.includes('depressor') || muscle.includes('labial');
-            case 'mentual':
-              return muscle.includes('mentalis') || muscle.includes('mentual');
-            default:
-              return true;
-          }
+          return getRegionFromMuscle(muscle) === selectedRegion;
         });
         
         // Also check legacy fields for glabela

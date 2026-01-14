@@ -3,6 +3,7 @@ import html2canvas from "html2canvas";
 import { InjectionPoint } from "@/components/Face3DViewer";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { MUSCLE_LABELS, MUSCLE_REGIONS, getMuscleLabel } from "@/lib/muscleUtils";
 
 interface PatientData {
   name: string;
@@ -34,40 +35,20 @@ interface ExportData {
   doctorName?: string;
   productType?: string;
   conversionFactor?: number;
+  includeTCLE?: boolean;
+  patientSignatureImage?: string | null;
+  doctorSignatureImage?: string | null;
 }
-
-const MUSCLE_LABELS: Record<string, string> = {
-  procerus: "Prócero",
-  corrugator_left: "Corrugador Esquerdo",
-  corrugator_right: "Corrugador Direito",
-  frontalis: "Frontal",
-  orbicularis_oculi_left: "Orbicular Olho Esq.",
-  orbicularis_oculi_right: "Orbicular Olho Dir.",
-  nasalis: "Nasal",
-  levator_labii: "Levantador do Lábio",
-  zygomaticus_major: "Zigomático Maior",
-  zygomaticus_minor: "Zigomático Menor",
-  orbicularis_oris: "Orbicular da Boca",
-  depressor_anguli: "Depressor do Ângulo",
-  mentalis: "Mentual",
-  masseter: "Masseter",
-};
-
-const MUSCLE_REGIONS: Record<string, string[]> = {
-  "Glabelar": ["procerus", "corrugator_left", "corrugator_right"],
-  "Frontal": ["frontalis"],
-  "Periorbital": ["orbicularis_oculi_left", "orbicularis_oculi_right"],
-  "Nasal": ["nasalis"],
-  "Perioral": ["orbicularis_oris", "levator_labii", "depressor_anguli"],
-  "Terço Inferior": ["mentalis", "masseter"],
-};
 
 // Calculate dosages by region
 function calculateDosagesByRegion(injectionPoints: InjectionPoint[]): Record<string, { points: number; dosage: number }> {
   const regionData: Record<string, { points: number; dosage: number }> = {};
   
   for (const [region, muscles] of Object.entries(MUSCLE_REGIONS)) {
-    const regionPoints = injectionPoints.filter(p => muscles.includes(p.muscle));
+    const regionPoints = injectionPoints.filter(p => {
+      const baseMuscle = p.muscle.replace(/_left|_right|_esq|_dir/gi, '');
+      return muscles.includes(baseMuscle) || muscles.includes(p.muscle);
+    });
     const totalDosage = regionPoints.reduce((sum, p) => sum + p.dosage, 0);
     if (regionPoints.length > 0) {
       regionData[region] = { points: regionPoints.length, dosage: totalDosage };
@@ -238,7 +219,7 @@ export async function exportAnalysisPdf(data: ExportData): Promise<void> {
       y = margin;
     }
 
-    const muscleLabel = MUSCLE_LABELS[point.muscle] || point.muscle;
+    const muscleLabel = getMuscleLabel(point.muscle);
     const depthLabel = point.depth === "deep" ? "Profundo" : "Superficial";
 
     pdf.setTextColor(...textColor);

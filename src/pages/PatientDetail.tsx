@@ -14,6 +14,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { PatientTreatmentHistory } from "@/components/PatientTreatmentHistory";
 import { BeforeAfterComparison } from "@/components/BeforeAfterComparison";
+import { TreatmentTimeline } from "@/components/TreatmentTimeline";
 import {
   Dialog,
   DialogContent,

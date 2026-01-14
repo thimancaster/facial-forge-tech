@@ -1,5 +1,125 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
+// ============ ZOD VALIDATION SCHEMA ============
+// Since we can't import Zod directly in Deno edge functions easily,
+// we implement manual validation with similar structure
+
+interface ValidationError {
+  field: string;
+  message: string;
+}
+
+function validateImageUrl(url: string): boolean {
+  if (!url || typeof url !== 'string') return false;
+  // Accept HTTP URLs or base64 data URIs
+  return url.startsWith('http://') || 
+         url.startsWith('https://') || 
+         url.startsWith('data:image/');
+}
+
+function validateGender(gender: string | undefined): boolean {
+  if (!gender) return true; // Optional
+  const validGenders = ['masculino', 'feminino', 'male', 'female'];
+  return validGenders.includes(gender.toLowerCase());
+}
+
+function validateAge(age: number | undefined): boolean {
+  if (age === undefined || age === null) return true; // Optional
+  return typeof age === 'number' && age > 0 && age < 150;
+}
+
+function validateMuscleStrength(strength: string | undefined): boolean {
+  if (!strength) return true; // Optional
+  const validStrengths = ['low', 'medium', 'high'];
+  return validStrengths.includes(strength.toLowerCase());
+}
+
+function validateSkinType(skinType: string | undefined): boolean {
+  if (!skinType) return true; // Optional
+  const validTypes = ['I', 'II', 'III', 'IV'];
+  return validTypes.includes(skinType.toUpperCase());
+}
+
+function validateConversionFactor(factor: number | undefined): boolean {
+  if (factor === undefined || factor === null) return true; // Optional, defaults to 1.0
+  return typeof factor === 'number' && factor >= 0.5 && factor <= 5.0;
+}
+
+interface RequestBody {
+  imageUrls?: string[];
+  patientGender?: string;
+  patientAge?: number;
+  patientContext?: {
+    gender?: string;
+    age?: number;
+    muscleStrength?: string;
+    skinTypeGlogau?: string;
+  };
+  productType?: string;
+  conversionFactor?: number;
+}
+
+function validateRequestBody(body: RequestBody): { valid: boolean; errors: ValidationError[] } {
+  const errors: ValidationError[] = [];
+
+  // Validate imageUrls (required)
+  if (!body.imageUrls) {
+    errors.push({ field: 'imageUrls', message: 'imageUrls é obrigatório' });
+  } else if (!Array.isArray(body.imageUrls)) {
+    errors.push({ field: 'imageUrls', message: 'imageUrls deve ser um array' });
+  } else if (body.imageUrls.length === 0) {
+    errors.push({ field: 'imageUrls', message: 'imageUrls não pode estar vazio' });
+  } else if (body.imageUrls.length > 10) {
+    errors.push({ field: 'imageUrls', message: 'Máximo de 10 imagens permitido' });
+  } else {
+    const invalidUrls = body.imageUrls.filter(url => !validateImageUrl(url));
+    if (invalidUrls.length > 0) {
+      errors.push({ 
+        field: 'imageUrls', 
+        message: `${invalidUrls.length} URL(s) inválida(s). Use URLs HTTP ou data URIs base64` 
+      });
+    }
+  }
+
+  // Validate patientGender (deprecated, optional)
+  if (body.patientGender && !validateGender(body.patientGender)) {
+    errors.push({ field: 'patientGender', message: 'Gênero inválido. Use: masculino, feminino, male, female' });
+  }
+
+  // Validate patientAge (deprecated, optional)
+  if (body.patientAge !== undefined && !validateAge(body.patientAge)) {
+    errors.push({ field: 'patientAge', message: 'Idade inválida. Deve ser um número entre 1 e 150' });
+  }
+
+  // Validate patientContext (new format)
+  if (body.patientContext) {
+    if (body.patientContext.gender && !validateGender(body.patientContext.gender)) {
+      errors.push({ field: 'patientContext.gender', message: 'Gênero inválido' });
+    }
+    if (body.patientContext.age !== undefined && !validateAge(body.patientContext.age)) {
+      errors.push({ field: 'patientContext.age', message: 'Idade inválida' });
+    }
+    if (body.patientContext.muscleStrength && !validateMuscleStrength(body.patientContext.muscleStrength)) {
+      errors.push({ field: 'patientContext.muscleStrength', message: 'Força muscular inválida. Use: low, medium, high' });
+    }
+    if (body.patientContext.skinTypeGlogau && !validateSkinType(body.patientContext.skinTypeGlogau)) {
+      errors.push({ field: 'patientContext.skinTypeGlogau', message: 'Tipo de pele inválido. Use: I, II, III, IV' });
+    }
+  }
+
+  // Validate conversionFactor
+  if (!validateConversionFactor(body.conversionFactor)) {
+    errors.push({ field: 'conversionFactor', message: 'Fator de conversão inválido. Deve ser entre 0.5 e 5.0' });
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors
+  };
+}
+
+// ============ END VALIDATION ============
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -436,7 +556,7 @@ serve(async (req) => {
 
   try {
     // Parse request body
-    let body;
+    let body: RequestBody;
     try {
       body = await req.json();
     } catch (e) {
@@ -447,23 +567,25 @@ serve(async (req) => {
       );
     }
 
-    const { imageUrls, patientGender, patientAge } = body;
-    
-    // Validate input
-    if (!imageUrls || !Array.isArray(imageUrls) || imageUrls.length === 0) {
-      console.error("No images provided");
+    // ============ INPUT VALIDATION ============
+    const validation = validateRequestBody(body);
+    if (!validation.valid) {
+      console.error("Validation errors:", validation.errors);
       return new Response(
-        JSON.stringify({ error: "Nenhuma imagem fornecida" }),
+        JSON.stringify({ 
+          error: "Dados de entrada inválidos",
+          validationErrors: validation.errors 
+        }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Filter valid URLs (support both http URLs and base64 data URIs)
-    const validUrls = imageUrls.filter((u: string) => 
-      u && typeof u === 'string' && (u.startsWith('http') || u.startsWith('data:image/'))
-    );
+    const { imageUrls, patientGender, patientAge, patientContext, conversionFactor = 1.0 } = body;
+
+    // Filter valid URLs (validated above, but double-check)
+    const validUrls = imageUrls!.filter(validateImageUrl);
     if (validUrls.length === 0) {
-      console.error("No valid image URLs found");
+      console.error("No valid image URLs found after filtering");
       return new Response(
         JSON.stringify({ error: "Nenhuma URL de imagem válida fornecida" }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -480,16 +602,27 @@ serve(async (req) => {
       );
     }
 
-    // Build patient context
-    const patientContext = patientGender || patientAge 
-      ? `\n\nInformações do paciente: ${patientGender ? `Gênero: ${patientGender}` : ''} ${patientAge ? `Idade: ${patientAge} anos` : ''}`
-      : '';
+    // Build patient context (prefer new format, fallback to deprecated)
+    const gender = patientContext?.gender || patientGender;
+    const age = patientContext?.age || patientAge;
+    const muscleStrength = patientContext?.muscleStrength;
+    const skinType = patientContext?.skinTypeGlogau;
+
+    let patientContextStr = '';
+    if (gender || age || muscleStrength || skinType) {
+      const parts = [];
+      if (gender) parts.push(`Gênero: ${gender}`);
+      if (age) parts.push(`Idade: ${age} anos`);
+      if (muscleStrength) parts.push(`Força muscular: ${muscleStrength}`);
+      if (skinType) parts.push(`Tipo de pele Glogau: ${skinType}`);
+      patientContextStr = `\n\nInformações do paciente: ${parts.join(', ')}`;
+    }
 
     // Build content array
     const content: any[] = [
       {
         type: "text",
-        text: `Analise estas fotos faciais para planejamento de tratamento com toxina botulínica.${patientContext}
+        text: `Analise estas fotos faciais para planejamento de tratamento com toxina botulínica.${patientContextStr}
         
 Descrição das fotos (em ordem):
 1. Face em repouso (expressão neutra)
@@ -521,8 +654,8 @@ Analise cuidadosamente e retorne o JSON estruturado conforme especificado.`
     } catch (networkError) {
       console.error("Network error after retries:", networkError);
       // Return fallback analysis
-      const fallback = getDefaultAnalysis(patientGender);
-      const result = convertToLegacyFormat(fallback, patientGender);
+      const fallback = getDefaultAnalysis(gender);
+      const result = convertToLegacyFormat(fallback, gender);
       return new Response(
         JSON.stringify(result),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -549,8 +682,8 @@ Analise cuidadosamente e retorne o JSON estruturado conforme especificado.`
       
       // For other errors, return fallback
       console.log("Returning fallback analysis due to AI error");
-      const fallback = getDefaultAnalysis(patientGender);
-      const result = convertToLegacyFormat(fallback, patientGender);
+      const fallback = getDefaultAnalysis(gender);
+      const result = convertToLegacyFormat(fallback, gender);
       return new Response(
         JSON.stringify(result),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -563,8 +696,8 @@ Analise cuidadosamente e retorne o JSON estruturado conforme especificado.`
       data = await response.json();
     } catch (e) {
       console.error("Failed to parse AI response as JSON:", e);
-      const fallback = getDefaultAnalysis(patientGender);
-      const result = convertToLegacyFormat(fallback, patientGender);
+      const fallback = getDefaultAnalysis(gender);
+      const result = convertToLegacyFormat(fallback, gender);
       return new Response(
         JSON.stringify(result),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -575,8 +708,8 @@ Analise cuidadosamente e retorne o JSON estruturado conforme especificado.`
 
     if (!aiResponse) {
       console.error("No content in AI response");
-      const fallback = getDefaultAnalysis(patientGender);
-      const result = convertToLegacyFormat(fallback, patientGender);
+      const fallback = getDefaultAnalysis(gender);
+      const result = convertToLegacyFormat(fallback, gender);
       return new Response(
         JSON.stringify(result),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -595,8 +728,8 @@ Analise cuidadosamente e retorne o JSON estruturado conforme especificado.`
       console.error("Raw response (first 500 chars):", aiResponse.substring(0, 500));
       
       // Return fallback
-      const fallback = getDefaultAnalysis(patientGender);
-      const result = convertToLegacyFormat(fallback, patientGender);
+      const fallback = getDefaultAnalysis(gender);
+      const result = convertToLegacyFormat(fallback, gender);
       return new Response(
         JSON.stringify(result),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -604,7 +737,7 @@ Analise cuidadosamente e retorne o JSON estruturado conforme especificado.`
     }
 
     // Convert to legacy format for backward compatibility
-    const result = convertToLegacyFormat(analysis, patientGender);
+    const result = convertToLegacyFormat(analysis, gender);
 
     console.log("Returning analysis with", result.injectionPoints?.length || 0, "injection points");
 

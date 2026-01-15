@@ -297,8 +297,9 @@ export default function PatientDetail() {
 
         {/* Tabs */}
         <Tabs defaultValue="sessions" className="space-y-6">
-          <TabsList className="grid w-full max-w-lg grid-cols-4">
+          <TabsList className="grid w-full max-w-xl grid-cols-5">
             <TabsTrigger value="sessions">Sessões</TabsTrigger>
+            <TabsTrigger value="timeline">Timeline</TabsTrigger>
             <TabsTrigger value="history">Evolução</TabsTrigger>
             <TabsTrigger value="comparison">Comparativo</TabsTrigger>
             <TabsTrigger value="info">Dados</TabsTrigger>
@@ -413,6 +414,27 @@ export default function PatientDetail() {
                   </Card>
                 );
               })
+            )}
+          </TabsContent>
+
+          {/* Timeline Tab - Longitudinal Treatment View */}
+          <TabsContent value="timeline" className="space-y-6">
+            {analyses.length > 0 ? (
+              <TreatmentTimeline analyses={analyses} />
+            ) : (
+              <Card className="border-border/50">
+                <CardContent className="py-12 text-center">
+                  <Activity className="w-12 h-12 mx-auto text-muted-foreground/50 mb-4" />
+                  <h3 className="text-lg font-medium mb-2">Sem dados para timeline</h3>
+                  <p className="text-muted-foreground mb-4">
+                    Inicie sua primeira análise para visualizar a evolução do tratamento.
+                  </p>
+                  <Button onClick={handleStartNewAnalysis}>
+                    <PlusCircle className="w-4 h-4 mr-2" />
+                    Iniciar Primeira Análise
+                  </Button>
+                </CardContent>
+              </Card>
             )}
           </TabsContent>
 

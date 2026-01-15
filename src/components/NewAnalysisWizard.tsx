@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Upload, ArrowLeft, ArrowRight, Check, User, Camera, Crosshair, Loader2, FolderOpen, X, Sparkles, Brain, Eye, Tag, FileDown, Settings2, MousePointer, Image, Box, ImageIcon } from "lucide-react";
+import { Upload, ArrowLeft, ArrowRight, Check, User, Camera, Crosshair, Loader2, FolderOpen, X, Sparkles, Brain, Eye, Tag, FileDown, Settings2, MousePointer, Image, Box, ImageIcon, Undo, Redo } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { CameraCapture, PhotoType } from "./CameraCapture";
@@ -18,6 +18,9 @@ import { TreatmentTemplates } from "./TreatmentTemplates";
 import { AnatomicalValidationAlert } from "./AnatomicalValidationAlert";
 import { exportAnalysisPdf, exportWithMapPdf } from "@/lib/exportPdf";
 import { PhotoPointsOverlay } from "./PhotoPointsOverlay";
+import { useUndoRedo } from "@/hooks/useUndoRedo";
+import { useRateLimiter } from "@/hooks/useRateLimiter";
+import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip";
 
 interface PatientData {
   name: string;
@@ -137,6 +140,30 @@ export function NewAnalysisWizard({ initialPatientId }: NewAnalysisWizardProps) 
   const [muscleStrength, setMuscleStrength] = useState("medium");
   const [skinTypeGlogau, setSkinTypeGlogau] = useState("II");
   
+  // Undo/Redo for injection points
+  const {
+    state: injectionPointsState,
+    set: setInjectionPoints,
+    undo: undoPoints,
+    redo: redoPoints,
+    reset: resetPoints,
+    canUndo,
+    canRedo,
+  } = useUndoRedo<InjectionPoint[]>([]);
+  
+  // Rate limiter for AI analysis (max 3 per minute)
+  const { 
+    checkLimit, 
+    remainingRequests, 
+    secondsUntilReset, 
+    canProceed: canAnalyze,
+    recordRequest 
+  } = useRateLimiter({
+    maxRequests: 3,
+    windowMs: 60000,
+    storageKey: 'ai-analysis-rate-limit',
+  });
+  
   const [aiAnalysis, setAiAnalysis] = useState<AIAnalysis | null>(null);
   const [selectedPoint, setSelectedPoint] = useState<InjectionPoint | null>(null);
   const [showMuscles, setShowMuscles] = useState(true);
@@ -147,6 +174,34 @@ export function NewAnalysisWizard({ initialPatientId }: NewAnalysisWizardProps) 
   
   // Ref for 3D viewer container (for screenshot export)
   const viewer3DRef = useRef<HTMLDivElement>(null);
+  
+  // Sync injection points with undo/redo state when aiAnalysis changes
+  useEffect(() => {
+    if (aiAnalysis?.injectionPoints && aiAnalysis.injectionPoints.length > 0) {
+      // Only reset if it's a new analysis (not from internal edits)
+      if (JSON.stringify(injectionPointsState) !== JSON.stringify(aiAnalysis.injectionPoints)) {
+        resetPoints(aiAnalysis.injectionPoints);
+      }
+    }
+  }, [aiAnalysis?.injectionPoints]);
+  
+  // Keyboard shortcuts for undo/redo
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        if (e.shiftKey) {
+          e.preventDefault();
+          if (canRedo) redoPoints();
+        } else {
+          e.preventDefault();
+          if (canUndo) undoPoints();
+        }
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [canUndo, canRedo, undoPoints, redoPoints]);
   
   // Temporary photo URLs for preview and AI analysis
   const [photoUrls, setPhotoUrls] = useState<Record<PhotoType, string | null>>({
@@ -237,6 +292,16 @@ export function NewAnalysisWizard({ initialPatientId }: NewAnalysisWizardProps) 
   };
 
   const handleAnalyzePhotos = async () => {
+    // Check rate limit before proceeding
+    if (!checkLimit()) {
+      toast({
+        title: "Limite de análises atingido",
+        description: `Aguarde ${secondsUntilReset} segundos antes de tentar novamente. (${remainingRequests}/${3} restantes)`,
+        variant: "destructive",
+      });
+      return;
+    }
+    
     setIsAnalyzing(true);
     try {
       const imageUrls: string[] = [];
@@ -269,6 +334,9 @@ export function NewAnalysisWizard({ initialPatientId }: NewAnalysisWizardProps) 
         return;
       }
 
+      // Record request for rate limiting
+      recordRequest();
+      
       const { data, error } = await supabase.functions.invoke('analyze-face', {
         body: { 
           imageUrls,
@@ -320,39 +388,54 @@ export function NewAnalysisWizard({ initialPatientId }: NewAnalysisWizardProps) 
     }
   };
 
-  const handlePointDosageChange = (pointId: string, newDosage: number) => {
-    if (!aiAnalysis) return;
-    
-    const updatedPoints = aiAnalysis.injectionPoints.map(p => 
-      p.id === pointId ? { ...p, dosage: newDosage } : p
-    );
-    
-    const procerusTotal = updatedPoints
+  // Helper to recalculate totals from points
+  const recalculateTotals = useCallback((points: InjectionPoint[]) => {
+    const procerusTotal = points
       .filter(p => p.muscle === "procerus")
       .reduce((sum, p) => sum + p.dosage, 0);
     
-    const corrugatorTotal = updatedPoints
+    const corrugatorTotal = points
       .filter(p => p.muscle.startsWith("corrugator"))
       .reduce((sum, p) => sum + p.dosage, 0);
 
-    const frontalisTotal = updatedPoints
+    const frontalisTotal = points
       .filter(p => p.muscle === "frontalis")
       .reduce((sum, p) => sum + p.dosage, 0);
 
-    const orbicularisTotal = updatedPoints
+    const orbicularisTotal = points
       .filter(p => p.muscle.startsWith("orbicularis_oculi"))
       .reduce((sum, p) => sum + p.dosage, 0);
     
+    const otherTotal = points
+      .filter(p => !["procerus", "frontalis"].includes(p.muscle) && 
+        !p.muscle.startsWith("corrugator") && 
+        !p.muscle.startsWith("orbicularis_oculi"))
+      .reduce((sum, p) => sum + p.dosage, 0);
+
+    return {
+      procerus: procerusTotal,
+      corrugator: corrugatorTotal,
+      frontalis: frontalisTotal,
+      orbicularis_oculi: orbicularisTotal,
+      total: procerusTotal + corrugatorTotal + frontalisTotal + orbicularisTotal + otherTotal
+    };
+  }, []);
+
+  const handlePointDosageChange = (pointId: string, newDosage: number) => {
+    if (!aiAnalysis) return;
+    
+    const updatedPoints = injectionPointsState.map(p => 
+      p.id === pointId ? { ...p, dosage: newDosage } : p
+    );
+    
+    // Update undo/redo state
+    setInjectionPoints(updatedPoints);
+    
+    // Update aiAnalysis with new totals
     setAiAnalysis({
       ...aiAnalysis,
       injectionPoints: updatedPoints,
-      totalDosage: {
-        procerus: procerusTotal,
-        corrugator: corrugatorTotal,
-        frontalis: frontalisTotal,
-        orbicularis_oculi: orbicularisTotal,
-        total: procerusTotal + corrugatorTotal + frontalisTotal + orbicularisTotal
-      }
+      totalDosage: recalculateTotals(updatedPoints)
     });
   };
 
@@ -375,48 +458,37 @@ export function NewAnalysisWizard({ initialPatientId }: NewAnalysisWizardProps) 
       dosage: Math.round(4 * conversionFactor), // Use current conversion factor
     };
     
-    const updatedPoints = [...aiAnalysis.injectionPoints, newPoint];
+    const updatedPoints = [...injectionPointsState, newPoint];
     
-    // Recalculate totals
-    const procerusTotal = updatedPoints
-      .filter(p => p.muscle === "procerus")
-      .reduce((sum, p) => sum + p.dosage, 0);
+    // Update undo/redo state
+    setInjectionPoints(updatedPoints);
     
-    const corrugatorTotal = updatedPoints
-      .filter(p => p.muscle.startsWith("corrugator"))
-      .reduce((sum, p) => sum + p.dosage, 0);
-
-    const frontalisTotal = updatedPoints
-      .filter(p => p.muscle === "frontalis")
-      .reduce((sum, p) => sum + p.dosage, 0);
-
-    const orbicularisTotal = updatedPoints
-      .filter(p => p.muscle.startsWith("orbicularis_oculi"))
-      .reduce((sum, p) => sum + p.dosage, 0);
-    
-    const total = procerusTotal + corrugatorTotal + frontalisTotal + orbicularisTotal + 
-      updatedPoints.filter(p => !["procerus", "frontalis"].includes(p.muscle) && 
-        !p.muscle.startsWith("corrugator") && 
-        !p.muscle.startsWith("orbicularis_oculi"))
-        .reduce((sum, p) => sum + p.dosage, 0);
-    
+    // Update aiAnalysis with new totals
     setAiAnalysis({
       ...aiAnalysis,
       injectionPoints: updatedPoints,
-      totalDosage: {
-        procerus: procerusTotal,
-        corrugator: corrugatorTotal,
-        frontalis: frontalisTotal,
-        orbicularis_oculi: orbicularisTotal,
-        total
-      }
+      totalDosage: recalculateTotals(updatedPoints)
     });
 
     toast({
       title: "Ponto adicionado!",
       description: `Novo ponto no ${pointData.muscle} com ${newPoint.dosage}U`,
     });
-  }, [aiAnalysis, conversionFactor, toast]);
+  }, [aiAnalysis, conversionFactor, toast, injectionPointsState, setInjectionPoints, recalculateTotals]);
+
+  // Sync aiAnalysis when undo/redo changes
+  useEffect(() => {
+    if (aiAnalysis && injectionPointsState.length > 0) {
+      // Only update if the points differ (to avoid infinite loops)
+      if (JSON.stringify(aiAnalysis.injectionPoints) !== JSON.stringify(injectionPointsState)) {
+        setAiAnalysis(prev => prev ? {
+          ...prev,
+          injectionPoints: injectionPointsState,
+          totalDosage: recalculateTotals(injectionPointsState)
+        } : null);
+      }
+    }
+  }, [injectionPointsState, recalculateTotals]);
 
   const handleExportPdf = async () => {
     if (!aiAnalysis) return;
@@ -986,6 +1058,44 @@ export function NewAnalysisWizard({ initialPatientId }: NewAnalysisWizardProps) 
                     
                     {viewMode === "3d" && (
                       <>
+                        {/* Undo/Redo Buttons */}
+                        <TooltipProvider>
+                          <div className="flex items-center gap-1 mr-2">
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="outline"
+                                  size="icon"
+                                  className="h-7 w-7"
+                                  onClick={undoPoints}
+                                  disabled={!canUndo}
+                                >
+                                  <Undo className="w-3.5 h-3.5" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Desfazer (Ctrl+Z)</p>
+                              </TooltipContent>
+                            </Tooltip>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="outline"
+                                  size="icon"
+                                  className="h-7 w-7"
+                                  onClick={redoPoints}
+                                  disabled={!canRedo}
+                                >
+                                  <Redo className="w-3.5 h-3.5" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>Refazer (Ctrl+Shift+Z)</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </div>
+                        </TooltipProvider>
+                        
                         <div className="flex items-center gap-2">
                           <Switch
                             id="edit-mode"

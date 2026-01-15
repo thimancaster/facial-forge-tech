@@ -1,12 +1,12 @@
 import { useRef, useState, Suspense, useMemo, useEffect, useCallback } from "react";
 import { Canvas, useFrame, useThree, ThreeEvent } from "@react-three/fiber";
-import { OrbitControls, Html, Text, Billboard, useGLTF, Center } from "@react-three/drei";
+import { OrbitControls, Html, Text, Billboard, useGLTF, Center, Line } from "@react-three/drei";
 import * as THREE from "three";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Eye, EyeOff, Layers, MousePointer, Plus, Bone, CircleDot, AlertTriangle, Info } from "lucide-react";
+import { Eye, EyeOff, Layers, MousePointer, Plus, Bone, CircleDot, AlertTriangle, Info, Bug } from "lucide-react";
 import { CollapsiblePanel } from "@/components/ui/collapsible-panel";
 import { getZoneFromMuscle, AnatomicalZone, MUSCLE_LABELS } from "@/lib/muscleUtils";
 
@@ -770,8 +770,133 @@ function GLBLoadingFallback() {
   );
 }
 
-// Scene content component
-function SceneContent({ useGLBModel, layers, showLabels, showDangerZones, injectionPoints, isLoading, selectedPointId, onPointClick, onSurfaceClick, isEditMode }: { useGLBModel: boolean; layers: LayerConfig; showLabels: boolean; showDangerZones: boolean; injectionPoints: InjectionPoint[]; isLoading: boolean; selectedPointId: string | null; onPointClick: (point: InjectionPoint) => void; onSurfaceClick: (point: THREE.Vector3) => void; isEditMode: boolean }) {
+// Debug Mode - Anatomical Anchors Visualization
+function DebugAnatomicalAnchors({ visible }: { visible: boolean }) {
+  if (!visible) return null;
+  
+  const zoneColors: Record<AnatomicalZone, string> = {
+    glabella: "#F59E0B",
+    frontalis: "#EF4444",
+    periorbital: "#8B5CF6",
+    nasal: "#06B6D4",
+    perioral: "#EC4899",
+    mentalis: "#10B981",
+    masseter: "#F97316",
+    unknown: "#6B7280",
+  };
+
+  return (
+    <group>
+      {(Object.entries(ANATOMICAL_ANCHORS) as [AnatomicalZone, typeof ANATOMICAL_ANCHORS[AnatomicalZone]][]).map(([zone, anchor]) => {
+        const { refPoint, width, height } = anchor;
+        const color = zoneColors[zone];
+        
+        // Calculate bounding box corners
+        const halfW = width / 2;
+        const halfH = height / 2;
+        
+        // Box vertices for wireframe
+        const boxPoints: [number, number, number][] = [
+          [refPoint.x - halfW, refPoint.y - halfH, refPoint.z],
+          [refPoint.x + halfW, refPoint.y - halfH, refPoint.z],
+          [refPoint.x + halfW, refPoint.y + halfH, refPoint.z],
+          [refPoint.x - halfW, refPoint.y + halfH, refPoint.z],
+          [refPoint.x - halfW, refPoint.y - halfH, refPoint.z], // Close loop
+        ];
+
+        return (
+          <group key={zone}>
+            {/* Bounding box wireframe */}
+            <Line
+              points={boxPoints}
+              color={color}
+              lineWidth={2}
+              dashed
+              dashSize={0.05}
+              gapSize={0.03}
+            />
+            
+            {/* Central reference anchor point */}
+            <mesh position={[refPoint.x, refPoint.y, refPoint.z]}>
+              <sphereGeometry args={[0.04, 16, 16]} />
+              <meshBasicMaterial color={color} />
+            </mesh>
+            
+            {/* Coordinate axes at anchor */}
+            {/* X axis (red) */}
+            <Line
+              points={[
+                [refPoint.x, refPoint.y, refPoint.z],
+                [refPoint.x + 0.15, refPoint.y, refPoint.z],
+              ]}
+              color="#EF4444"
+              lineWidth={3}
+            />
+            {/* Y axis (green) */}
+            <Line
+              points={[
+                [refPoint.x, refPoint.y, refPoint.z],
+                [refPoint.x, refPoint.y + 0.15, refPoint.z],
+              ]}
+              color="#22C55E"
+              lineWidth={3}
+            />
+            {/* Z axis (blue) */}
+            <Line
+              points={[
+                [refPoint.x, refPoint.y, refPoint.z],
+                [refPoint.x, refPoint.y, refPoint.z + 0.15],
+              ]}
+              color="#3B82F6"
+              lineWidth={3}
+            />
+            
+            {/* Zone label */}
+            <Billboard position={[refPoint.x, refPoint.y + halfH + 0.1, refPoint.z]} follow>
+              <Text
+                fontSize={0.08}
+                color={color}
+                anchorX="center"
+                anchorY="bottom"
+                outlineWidth={0.01}
+                outlineColor="#000000"
+              >
+                {zone.toUpperCase()}
+              </Text>
+            </Billboard>
+            
+            {/* Coordinates label */}
+            <Billboard position={[refPoint.x, refPoint.y - halfH - 0.08, refPoint.z]} follow>
+              <Text
+                fontSize={0.05}
+                color="#9CA3AF"
+                anchorX="center"
+                anchorY="top"
+                outlineWidth={0.005}
+                outlineColor="#000000"
+              >
+                {`(${refPoint.x.toFixed(2)}, ${refPoint.y.toFixed(2)}, ${refPoint.z.toFixed(2)})`}
+              </Text>
+            </Billboard>
+          </group>
+        );
+      })}
+      
+      {/* Global coordinate system at origin */}
+      <group position={[0, -1.5, 1.5]}>
+        <Line points={[[0, 0, 0], [0.3, 0, 0]]} color="#EF4444" lineWidth={4} />
+        <Line points={[[0, 0, 0], [0, 0.3, 0]]} color="#22C55E" lineWidth={4} />
+        <Line points={[[0, 0, 0], [0, 0, 0.3]]} color="#3B82F6" lineWidth={4} />
+        <Billboard position={[0.35, 0, 0]} follow><Text fontSize={0.08} color="#EF4444">X</Text></Billboard>
+        <Billboard position={[0, 0.35, 0]} follow><Text fontSize={0.08} color="#22C55E">Y</Text></Billboard>
+        <Billboard position={[0, 0, 0.35]} follow><Text fontSize={0.08} color="#3B82F6">Z</Text></Billboard>
+      </group>
+    </group>
+  );
+}
+
+// Scene content component with debug mode support
+function SceneContent({ useGLBModel, layers, showLabels, showDangerZones, injectionPoints, isLoading, selectedPointId, onPointClick, onSurfaceClick, isEditMode, debugMode }: { useGLBModel: boolean; layers: LayerConfig; showLabels: boolean; showDangerZones: boolean; injectionPoints: InjectionPoint[]; isLoading: boolean; selectedPointId: string | null; onPointClick: (point: InjectionPoint) => void; onSurfaceClick: (point: THREE.Vector3) => void; isEditMode: boolean; debugMode: boolean }) {
   const [glbError, setGlbError] = useState(false);
 
   return (
@@ -809,6 +934,9 @@ function SceneContent({ useGLBModel, layers, showLabels, showDangerZones, inject
         <InjectionPointMesh key={point.id} point={point} onClick={() => onPointClick(point)} isSelected={selectedPointId === point.id} useGLB={useGLBModel} />
       ))}
 
+      {/* Debug mode visualization */}
+      <DebugAnatomicalAnchors visible={debugMode} />
+
       {isLoading && <LoadingIndicator />}
 
       <OrbitControls enablePan={true} panSpeed={0.5} minDistance={3} maxDistance={10} minPolarAngle={Math.PI / 6} maxPolarAngle={Math.PI * 5 / 6} minAzimuthAngle={-Math.PI / 2} maxAzimuthAngle={Math.PI / 2} enableDamping dampingFactor={0.05} rotateSpeed={0.5} />
@@ -834,6 +962,7 @@ export function Face3DViewer({
   const [selectedPointId, setSelectedPointId] = useState<string | null>(null);
   const [internalEditMode, setInternalEditMode] = useState(false);
   const [useGLBModel, setUseGLBModel] = useState(initialUseGLB);
+  const [debugMode, setDebugMode] = useState(false);
   
   const isEditMode = externalEditMode !== undefined ? externalEditMode : internalEditMode;
 
@@ -863,7 +992,7 @@ export function Face3DViewer({
     <div className="w-full h-full min-h-[500px] bg-gradient-to-br from-slate-100 via-slate-50 to-slate-100 rounded-xl overflow-hidden relative">
       <Canvas camera={{ position: [0, 0, 5.5], fov: 40 }} gl={{ antialias: true, alpha: true, powerPreference: "high-performance" }} dpr={[1, 2]}>
         <Suspense fallback={null}>
-          <SceneContent useGLBModel={useGLBModel} layers={layers} showLabels={showLabels} showDangerZones={showDangerZones} injectionPoints={injectionPoints} isLoading={isLoading} selectedPointId={selectedPointId} onPointClick={handlePointClick} onSurfaceClick={handleSurfaceClick} isEditMode={isEditMode} />
+          <SceneContent useGLBModel={useGLBModel} layers={layers} showLabels={showLabels} showDangerZones={showDangerZones} injectionPoints={injectionPoints} isLoading={isLoading} selectedPointId={selectedPointId} onPointClick={handlePointClick} onSurfaceClick={handleSurfaceClick} isEditMode={isEditMode} debugMode={debugMode} />
         </Suspense>
       </Canvas>
 
@@ -905,12 +1034,19 @@ export function Face3DViewer({
             </div>
 
             {/* Edit Mode */}
-            <div className="border-t border-slate-200 pt-3">
+            <div className="border-t border-slate-200 pt-3 space-y-3">
               <div className="flex items-center justify-between">
                 <Label htmlFor="edit-mode" className="text-xs text-slate-600 flex items-center gap-1.5"><MousePointer className="w-3 h-3" />Modo Edição</Label>
                 <Switch id="edit-mode" checked={internalEditMode} onCheckedChange={setInternalEditMode} />
               </div>
               {internalEditMode && <p className="text-[10px] text-amber-600 mt-1.5 bg-amber-50 rounded px-2 py-1">Clique no modelo para adicionar pontos</p>}
+              
+              {/* Debug Mode */}
+              <div className="flex items-center justify-between">
+                <Label htmlFor="debug-mode" className="text-xs text-slate-600 flex items-center gap-1.5"><Bug className="w-3 h-3" />Modo Debug</Label>
+                <Switch id="debug-mode" checked={debugMode} onCheckedChange={setDebugMode} />
+              </div>
+              {debugMode && <p className="text-[10px] text-cyan-600 mt-1.5 bg-cyan-50 rounded px-2 py-1">Âncoras anatômicas e bounding boxes visíveis</p>}
             </div>
           </div>
         </CollapsiblePanel>

@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 // ============ ZOD VALIDATION SCHEMA ============
 // Since we can't import Zod directly in Deno edge functions easily,
@@ -555,6 +556,44 @@ serve(async (req) => {
   }
 
   try {
+    // ============ AUTHENTICATION CHECK ============
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      console.error('[AUTH] Missing or invalid authorization header');
+      return new Response(
+        JSON.stringify({ error: 'Autenticação necessária' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Initialize Supabase client with auth header
+    const supabaseClient = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+      {
+        global: {
+          headers: { Authorization: authHeader },
+        },
+      }
+    );
+
+    // Verify user is authenticated using getClaims
+    const token = authHeader.replace('Bearer ', '');
+    const { data: claimsData, error: authError } = await supabaseClient.auth.getClaims(token);
+
+    if (authError || !claimsData?.claims) {
+      console.error('[AUTH] Authentication failed:', authError?.message);
+      return new Response(
+        JSON.stringify({ error: 'Não autorizado' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const userId = claimsData.claims.sub;
+    console.log(`[AUTH] Authenticated request from user: ${userId}`);
+
+    // ============ END AUTHENTICATION ============
+
     // Parse request body
     let body: RequestBody;
     try {

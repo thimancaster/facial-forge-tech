@@ -244,18 +244,27 @@ export function NewAnalysisWizard({ initialPatientId }: NewAnalysisWizardProps) 
     
     const { error: uploadError } = await supabase.storage
       .from('patient-photos')
-      .upload(fileName, file);
+      .upload(fileName, file, {
+        cacheControl: '3600',
+        upsert: false,
+      });
 
     if (uploadError) {
       console.error('Upload error:', uploadError);
       return null;
     }
 
-    const { data: { publicUrl } } = supabase.storage
+    // SECURITY: Use signed URLs instead of public URLs for private bucket
+    const { data, error: urlError } = await supabase.storage
       .from('patient-photos')
-      .getPublicUrl(fileName);
+      .createSignedUrl(fileName, 60 * 60 * 24 * 365); // 1 year expiry
 
-    return publicUrl;
+    if (urlError || !data) {
+      console.error('Failed to create signed URL:', urlError);
+      return null;
+    }
+
+    return data.signedUrl;
   };
 
   const fileToBase64 = (file: File): Promise<string> => {

@@ -1,2 +1,5 @@
 [functions.analyze-face]
 verify_jwt = false
+
+[functions.suggest-dosage]
+verify_jwt = false

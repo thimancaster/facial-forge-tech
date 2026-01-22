@@ -703,8 +703,8 @@ Analise cuidadosamente e retorne o JSON estruturado conforme especificado.`
 
     // Handle non-OK responses
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`AI gateway error: ${response.status}`, errorText);
+      // Log status only, not response body (may contain sensitive data)
+      console.error('[INTERNAL] AI request failed:', response.status);
       
       if (response.status === 429) {
         return new Response(
@@ -763,8 +763,8 @@ Analise cuidadosamente e retorne o JSON estruturado conforme especificado.`
       analysis = parseAIResponse(aiResponse);
       console.log("Successfully parsed AI analysis");
     } catch (parseError) {
-      console.error("Failed to parse AI response:", parseError);
-      console.error("Raw response (first 500 chars):", aiResponse.substring(0, 500));
+      // Log parse failure without raw response (may contain patient context)
+      console.error('[INTERNAL] Parse failed:', parseError instanceof Error ? parseError.message : 'Unknown');
       
       // Return fallback
       const fallback = getDefaultAnalysis(gender);
@@ -786,13 +786,16 @@ Analise cuidadosamente e retorne o JSON estruturado conforme especificado.`
     );
 
   } catch (error) {
-    console.error("Unhandled error in analyze-face:", error);
+    // Log error server-side with sanitization - don't log full stack traces
+    console.error('[INTERNAL] Unhandled error:', {
+      message: error instanceof Error ? error.message : 'Unknown',
+      timestamp: new Date().toISOString()
+    });
     
-    // Return a generic error response
+    // Return generic error to client - NO DETAILS exposed
     return new Response(
       JSON.stringify({ 
-        error: "Erro interno do servidor. Por favor, tente novamente.",
-        details: error instanceof Error ? error.message : "Unknown error"
+        error: "Erro interno do servidor. Por favor, tente novamente."
       }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );

@@ -21,67 +21,70 @@ export interface ValidationError {
 }
 
 // Danger zone coordinates (normalized 0-100, matching AI output * 100)
-// Based on: Brazilian Consensus 2024, Carruthers & Carruthers guidelines
+// CALIBRATED TO GLB MODEL - Brazilian Consensus 2024, Carruthers & Carruthers guidelines
+// These bounds define regions where injection points should trigger warnings
 const DANGER_ZONES = [
   {
     id: "orbital_margin_left",
     label: "Margem Orbital Esquerda",
-    bounds: { xMin: 28, xMax: 44, yMin: 28, yMax: 36 },
+    bounds: { xMin: 26, xMax: 42, yMin: 30, yMax: 40 },
     reason: "Risco de ptose palpebral - manter 2cm acima",
   },
   {
     id: "orbital_margin_right",
     label: "Margem Orbital Direita",
-    bounds: { xMin: 56, xMax: 72, yMin: 28, yMax: 36 },
+    bounds: { xMin: 58, xMax: 74, yMin: 30, yMax: 40 },
     reason: "Risco de ptose palpebral - manter 2cm acima",
   },
   {
     id: "infraorbital_left",
     label: "Área Infraorbital Esquerda",
-    bounds: { xMin: 28, xMax: 42, yMin: 44, yMax: 55 },
+    bounds: { xMin: 28, xMax: 44, yMin: 42, yMax: 52 },
     reason: "Risco de difusão para músculos oculares e zigomático",
   },
   {
     id: "infraorbital_right",
     label: "Área Infraorbital Direita",
-    bounds: { xMin: 58, xMax: 72, yMin: 44, yMax: 55 },
+    bounds: { xMin: 56, xMax: 72, yMin: 42, yMax: 52 },
     reason: "Risco de difusão para músculos oculares e zigomático",
   },
   {
     id: "labial_commissure_left",
     label: "Comissura Labial Esquerda",
-    bounds: { xMin: 32, xMax: 44, yMin: 62, yMax: 72 },
+    bounds: { xMin: 34, xMax: 44, yMin: 60, yMax: 70 },
     reason: "Risco de assimetria do sorriso e boca caída",
   },
   {
     id: "labial_commissure_right",
     label: "Comissura Labial Direita",
-    bounds: { xMin: 56, xMax: 68, yMin: 62, yMax: 72 },
+    bounds: { xMin: 56, xMax: 66, yMin: 60, yMax: 70 },
     reason: "Risco de assimetria do sorriso e boca caída",
   },
   {
     id: "mediopupilar_line_left",
     label: "Linha Mediopupilar Esquerda",
-    bounds: { xMin: 33, xMax: 37, yMin: 30, yMax: 42 },
+    bounds: { xMin: 32, xMax: 38, yMin: 32, yMax: 42 },
     reason: "Limite lateral para injeções glabelares - risco de ptose",
   },
   {
     id: "mediopupilar_line_right",
     label: "Linha Mediopupilar Direita",
-    bounds: { xMin: 63, xMax: 67, yMin: 30, yMax: 42 },
+    bounds: { xMin: 62, xMax: 68, yMin: 32, yMax: 42 },
     reason: "Limite lateral para injeções glabelares - risco de ptose",
   },
 ];
 
 // Spatial hierarchy rules (Y coordinates should follow this order)
-// Calibrated for AI output coordinates (0-100 scale)
+// CALIBRATED TO GLB MODEL - matches ANATOMICAL_ANCHORS coordinate system
+// Y coordinates: 0 = top of head, 100 = bottom of chin
 const SPATIAL_HIERARCHY = [
-  { zone: "frontalis", maxY: 28, minY: 8 },      // Testa: y=10-22% é seguro, máximo absoluto 28
-  { zone: "glabella", minY: 30, maxY: 42 },      // Glabela: y=35-37% ideal
-  { zone: "periorbital", minY: 34, maxY: 52 },   // Periorbital: y=36-48% 
-  { zone: "nasal", minY: 40, maxY: 52 },         // Nasal: y=42-48%
-  { zone: "perioral", minY: 55, maxY: 78 },      // Perioral: abaixo do nariz
-  { zone: "mentalis", minY: 72, maxY: 98 },      // Mentual: área do queixo
+  { zone: "frontalis", minY: 5, maxY: 25 },       // Testa: y=10-22% ideal, frontalis upper forehead
+  { zone: "glabella", minY: 28, maxY: 42 },       // Glabela: y=35-40% centered at nasion
+  { zone: "periorbital", minY: 32, maxY: 50 },    // Periorbital: y=35-48% lateral to eyes
+  { zone: "nasal", minY: 42, maxY: 55 },          // Nasal: y=44-52% bunny lines area
+  { zone: "perioral", minY: 56, maxY: 76 },       // Perioral: y=58-72% around mouth
+  { zone: "mentalis", minY: 75, maxY: 95 },       // Mentual: y=78-92% chin area
+  { zone: "masseter", minY: 50, maxY: 75 },       // Masseter: y=55-72% lateral jaw
 ];
 
 // Check bilateral symmetry

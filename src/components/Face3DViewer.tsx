@@ -49,37 +49,39 @@ interface LayerConfig {
   bone: { visible: boolean; opacity: number };
 }
 
-// Muscle definitions with anatomical data
+// Muscle definitions with anatomical data - CALIBRATED TO GLB MODEL
+// Label positions aligned with GLB mesh at scale 2.5
 const MUSCLE_DATA: Record<string, { 
   color: string; 
   label: string;
   labelPosition: [number, number, number];
 }> = {
-  procerus: { color: "#B85450", label: MUSCLE_LABELS.procerus || "Prócero", labelPosition: [0, 0.9, 1.6] },
-  corrugator_left: { color: "#A04040", label: MUSCLE_LABELS.corrugator_left || "Corrugador Esq.", labelPosition: [-0.8, 0.7, 1.3] },
-  corrugator_right: { color: "#A04040", label: MUSCLE_LABELS.corrugator_right || "Corrugador Dir.", labelPosition: [0.8, 0.7, 1.3] },
-  frontalis: { color: "#C06060", label: MUSCLE_LABELS.frontalis || "Frontal", labelPosition: [0, 1.5, 1.0] },
-  orbicularis_oculi_left: { color: "#9F5050", label: MUSCLE_LABELS.orbicularis_oculi_left || "Orbicular do Olho Esq.", labelPosition: [-1.0, 0.3, 1.2] },
-  orbicularis_oculi_right: { color: "#9F5050", label: MUSCLE_LABELS.orbicularis_oculi_right || "Orbicular do Olho Dir.", labelPosition: [1.0, 0.3, 1.2] },
-  nasalis: { color: "#B06060", label: MUSCLE_LABELS.nasalis || "Nasal", labelPosition: [0, 0.1, 1.8] },
-  levator_labii: { color: "#A85555", label: MUSCLE_LABELS.levator_labii || "Levantador do Lábio", labelPosition: [-0.5, -0.2, 1.5] },
-  zygomaticus_major: { color: "#AA5858", label: MUSCLE_LABELS.zygomaticus_major || "Zigomático Maior", labelPosition: [0.9, -0.3, 1.0] },
-  zygomaticus_minor: { color: "#A55252", label: MUSCLE_LABELS.zygomaticus_minor || "Zigomático Menor", labelPosition: [-0.9, -0.1, 1.1] },
-  orbicularis_oris: { color: "#B06565", label: MUSCLE_LABELS.orbicularis_oris || "Orbicular da Boca", labelPosition: [0, -0.7, 1.5] },
-  depressor_anguli: { color: "#9A4848", label: MUSCLE_LABELS.depressor_anguli || "Depressor do Ângulo", labelPosition: [0.7, -0.9, 1.1] },
-  mentalis: { color: "#A55050", label: MUSCLE_LABELS.mentalis || "Mentual", labelPosition: [0, -1.2, 1.3] },
-  masseter: { color: "#8B4545", label: MUSCLE_LABELS.masseter || "Masseter", labelPosition: [1.1, -0.5, 0.6] }
+  procerus: { color: "#B85450", label: MUSCLE_LABELS.procerus || "Prócero", labelPosition: [0, 0.82, 1.85] },
+  corrugator_left: { color: "#A04040", label: MUSCLE_LABELS.corrugator_left || "Corrugador Esq.", labelPosition: [-0.45, 0.72, 1.70] },
+  corrugator_right: { color: "#A04040", label: MUSCLE_LABELS.corrugator_right || "Corrugador Dir.", labelPosition: [0.45, 0.72, 1.70] },
+  frontalis: { color: "#C06060", label: MUSCLE_LABELS.frontalis || "Frontal", labelPosition: [0, 1.45, 1.40] },
+  orbicularis_oculi_left: { color: "#9F5050", label: MUSCLE_LABELS.orbicularis_oculi_left || "Orbicular do Olho Esq.", labelPosition: [-0.90, 0.48, 1.35] },
+  orbicularis_oculi_right: { color: "#9F5050", label: MUSCLE_LABELS.orbicularis_oculi_right || "Orbicular do Olho Dir.", labelPosition: [0.90, 0.48, 1.35] },
+  nasalis: { color: "#B06060", label: MUSCLE_LABELS.nasalis || "Nasal", labelPosition: [0, 0.20, 2.00] },
+  levator_labii: { color: "#A85555", label: MUSCLE_LABELS.levator_labii || "Levantador do Lábio", labelPosition: [-0.35, -0.10, 1.80] },
+  zygomaticus_major: { color: "#AA5858", label: MUSCLE_LABELS.zygomaticus_major || "Zigomático Maior", labelPosition: [0.75, -0.25, 1.20] },
+  zygomaticus_minor: { color: "#A55252", label: MUSCLE_LABELS.zygomaticus_minor || "Zigomático Menor", labelPosition: [-0.75, -0.08, 1.30] },
+  orbicularis_oris: { color: "#B06565", label: MUSCLE_LABELS.orbicularis_oris || "Orbicular da Boca", labelPosition: [0, -0.55, 1.75] },
+  depressor_anguli: { color: "#9A4848", label: MUSCLE_LABELS.depressor_anguli || "Depressor do Ângulo", labelPosition: [0.55, -0.70, 1.45] },
+  mentalis: { color: "#A55050", label: MUSCLE_LABELS.mentalis || "Mentual", labelPosition: [0, -0.95, 1.58] },
+  masseter: { color: "#8B4545", label: MUSCLE_LABELS.masseter || "Masseter", labelPosition: [1.05, -0.35, 0.90] }
 };
 
-// Danger zones with 3D positions
+// Danger zones with 3D positions - CALIBRATED TO GLB MODEL
+// Positions aligned with anatomical landmarks on GLB mesh at scale 2.5
 const DANGER_ZONES = [
   {
     id: "orbital_margin",
     label: "Margem Orbital",
     color: "#EF4444",
     positions: [
-      { center: [-0.55, 0.35, 1.35] as [number, number, number], radius: 0.25 },
-      { center: [0.55, 0.35, 1.35] as [number, number, number], radius: 0.25 },
+      { center: [-0.55, 0.50, 1.42] as [number, number, number], radius: 0.22 },
+      { center: [0.55, 0.50, 1.42] as [number, number, number], radius: 0.22 },
     ],
     reason: "Risco de ptose palpebral - manter 2cm acima"
   },
@@ -88,8 +90,8 @@ const DANGER_ZONES = [
     label: "Área Infraorbital",
     color: "#F97316",
     positions: [
-      { center: [-0.45, 0.1, 1.3] as [number, number, number], radius: 0.2 },
-      { center: [0.45, 0.1, 1.3] as [number, number, number], radius: 0.2 },
+      { center: [-0.48, 0.25, 1.48] as [number, number, number], radius: 0.18 },
+      { center: [0.48, 0.25, 1.48] as [number, number, number], radius: 0.18 },
     ],
     reason: "Risco de difusão para músculos oculares"
   },
@@ -98,8 +100,8 @@ const DANGER_ZONES = [
     label: "Comissura Labial",
     color: "#FBBF24",
     positions: [
-      { center: [-0.35, -0.55, 1.4] as [number, number, number], radius: 0.15 },
-      { center: [0.35, -0.55, 1.4] as [number, number, number], radius: 0.15 },
+      { center: [-0.38, -0.48, 1.65] as [number, number, number], radius: 0.14 },
+      { center: [0.38, -0.48, 1.65] as [number, number, number], radius: 0.14 },
     ],
     reason: "Risco de assimetria do sorriso"
   },
@@ -108,8 +110,8 @@ const DANGER_ZONES = [
     label: "Linha Mediopupilar",
     color: "#A855F7",
     positions: [
-      { center: [-0.55, 0.6, 1.2] as [number, number, number], radius: 0.08 },
-      { center: [0.55, 0.6, 1.2] as [number, number, number], radius: 0.08 },
+      { center: [-0.55, 0.72, 1.68] as [number, number, number], radius: 0.07 },
+      { center: [0.55, 0.72, 1.68] as [number, number, number], radius: 0.07 },
     ],
     reason: "Limite lateral para injeções glabelares"
   }
@@ -118,109 +120,145 @@ const DANGER_ZONES = [
 // ============ GLB CALIBRATION - PRECISION SURFACE ALIGNMENT ============
 // Calibration system designed for 100% reliable alignment with face-anatomy.glb
 // Uses anatomical landmarks as reference points for each facial zone
+// MASTER REFERENCE: GLB model at scale 2.5 - all coordinates calibrated to surface mesh
 
 // GLB Model reference measurements (based on face-anatomy.glb at scale 2.5)
+// These values are derived from the actual mesh geometry
 const GLB_MODEL_BOUNDS = {
-  // Model dimensions after scaling
+  // Model scale factor applied to GLB
   modelScale: 2.5,
-  // Facial width at widest point (cheekbones) - approximately 2.7 units
-  facialWidth: 2.7,
-  // Facial height from chin to forehead top - approximately 3.4 units
-  facialHeight: 3.4,
-  // Center of face in Y axis
-  centerY: 0.1,
+  // Facial width at widest point (zygomatic arches) in 3D units
+  facialWidth: 2.4,
+  // Facial height from chin tip to hairline in 3D units  
+  facialHeight: 3.2,
+  // Vertical center of face (approximately at nose bridge)
+  centerY: 0.2,
+  // Front surface Z at center of face
+  centerZ: 1.8,
 };
 
-// Anatomical reference points on the GLB model (manually calibrated with medical precision)
-// Based on: Consensus Guidelines (Carruthers, Cotofana) and Brazilian Consensus 2024
-// Coordinates are calibrated for AI output: y=0.35-0.37 for procerus, y=0.10-0.22 for frontalis
+// ============ ANATOMICAL ANCHORS - PRECISION CALIBRATED TO GLB MESH ============
+// Each zone defines a bounding volume mapped to the GLB surface
+// refPoint: The CENTER of the zone on the 3D surface
+// width/height: Bounding box dimensions for coordinate mapping
+// curvatureX/Y: Surface curvature factors for accurate depth positioning
+//
+// COORDINATE SYSTEM:
+// - AI outputs: x,y as 0-100 percentage (50,50 = center of face)
+// - 3D output: x = left(-) to right(+), y = down(-) to up(+), z = back(-) to front(+)
+//
+// CALIBRATION METHODOLOGY (Consenso Brasileiro 2024 / Carruthers / Cotofana):
+// - Glabella center at nasion level (between eyebrows)
+// - Procerus: x=50%, y=35-38%
+// - Corrugators: 10-15mm lateral to procerus
+// - Frontalis: 2cm+ above supraorbital rim
+// - Periorbital: 1cm lateral to orbital rim
+
 const ANATOMICAL_ANCHORS: Record<AnatomicalZone, {
-  // Reference position for the CENTER of this zone
+  // Reference position for the CENTER of this zone on GLB surface
   refPoint: { x: number; y: number; z: number };
   // Bounding box size for mapping percentage coordinates
   width: number;
   height: number;
-  // Surface curvature parameters
-  curvatureX: number;  // How much Z decreases as we move laterally
-  curvatureY: number;  // How much Z decreases as we move vertically
+  // Surface curvature parameters (higher = more curve-back at edges)
+  curvatureX: number;
+  curvatureY: number;
+  // Z-offset for surface positioning (positive = forward)
+  surfaceOffset: number;
 }> = {
-  // Glabella: Between eyebrows, y=35-37% corresponds to nasion level
-  // AI output y=0.35-0.37 → 3D y=0.55-0.60 (inverted + offset)
+  // GLABELLA: Between eyebrows, centered at nasion
+  // AI coords: x~50, y~35-40 → 3D center at forehead/brow junction
+  // GLB surface Z ≈ 1.75 at center glabella
   glabella: {
-    refPoint: { x: 0, y: 0.58, z: 1.82 },
-    width: 0.65,
-    height: 0.45,
-    curvatureX: 0.12,
-    curvatureY: 0.06,
-  },
-  
-  // Frontalis: Forehead area, y=10-22% for AI output
-  // Must map to upper forehead in 3D (y=1.2-1.6)
-  frontalis: {
-    refPoint: { x: 0, y: 1.40, z: 1.42 },
-    width: 1.5,
-    height: 0.85,
-    curvatureX: 0.32,
-    curvatureY: 0.22,
-  },
-  
-  // Periorbital: Crow's feet area, x=22-28% or 72-78%
-  // 1cm lateral to orbital rim
-  periorbital: {
-    refPoint: { x: 0.90, y: 0.38, z: 1.48 },
-    width: 0.75,
-    height: 0.55,
-    curvatureX: 0.42,
-    curvatureY: 0.12,
-  },
-  
-  // Nasal: Bunny lines, y=42-48% in AI coords
-  nasal: {
-    refPoint: { x: 0, y: 0.02, z: 2.02 },
-    width: 0.38,
-    height: 0.65,
-    curvatureX: 0.10,
-    curvatureY: 0.18,
-  },
-  
-  // Perioral: Around the mouth, y=55-75% in AI coords
-  perioral: {
-    refPoint: { x: 0, y: -0.52, z: 1.75 },
-    width: 0.85,
-    height: 0.48,
-    curvatureX: 0.16,
-    curvatureY: 0.08,
-  },
-  
-  // Mentalis: Chin area, y=70-95% in AI coords
-  mentalis: {
-    refPoint: { x: 0, y: -0.98, z: 1.52 },
+    refPoint: { x: 0, y: 0.72, z: 1.78 },
     width: 0.55,
-    height: 0.38,
-    curvatureX: 0.20,
-    curvatureY: 0.28,
+    height: 0.40,
+    curvatureX: 0.08,
+    curvatureY: 0.04,
+    surfaceOffset: 0.03,
   },
   
-  // Masseter: Side of jaw - lateral position
+  // FRONTALIS: Upper forehead muscle
+  // AI coords: x~25-75, y~10-25 → 3D upper forehead
+  // GLB surface curves back significantly at top
+  frontalis: {
+    refPoint: { x: 0, y: 1.35, z: 1.35 },
+    width: 1.40,
+    height: 0.70,
+    curvatureX: 0.25,
+    curvatureY: 0.18,
+    surfaceOffset: 0.04,
+  },
+  
+  // PERIORBITAL: Lateral to eyes (crow's feet zone)
+  // AI coords: x~20-30 or 70-80, y~35-50 → 3D lateral orbital area
+  // refPoint.x is POSITIVE (right side) - left side is mirrored in code
+  periorbital: {
+    refPoint: { x: 0.85, y: 0.48, z: 1.38 },
+    width: 0.55,
+    height: 0.50,
+    curvatureX: 0.35,
+    curvatureY: 0.08,
+    surfaceOffset: 0.03,
+  },
+  
+  // NASAL: Bunny lines area, on lateral nasal walls
+  // AI coords: x~40-60, y~42-50 → 3D nose dorsum/sides
+  // Most anterior point of face (highest Z)
+  nasal: {
+    refPoint: { x: 0, y: 0.15, z: 1.95 },
+    width: 0.35,
+    height: 0.50,
+    curvatureX: 0.12,
+    curvatureY: 0.10,
+    surfaceOffset: 0.02,
+  },
+  
+  // PERIORAL: Around mouth area
+  // AI coords: x~35-65, y~58-72 → 3D perioral region
+  perioral: {
+    refPoint: { x: 0, y: -0.42, z: 1.72 },
+    width: 0.75,
+    height: 0.45,
+    curvatureX: 0.14,
+    curvatureY: 0.06,
+    surfaceOffset: 0.03,
+  },
+  
+  // MENTALIS: Chin muscle
+  // AI coords: x~40-60, y~78-92 → 3D chin prominence
+  mentalis: {
+    refPoint: { x: 0, y: -0.88, z: 1.55 },
+    width: 0.50,
+    height: 0.35,
+    curvatureX: 0.18,
+    curvatureY: 0.22,
+    surfaceOffset: 0.03,
+  },
+  
+  // MASSETER: Side of jaw (bilateral)
+  // AI coords: x~10-25 or 75-90, y~55-75 → 3D lateral jaw
   masseter: {
-    refPoint: { x: 1.08, y: -0.38, z: 0.95 },
-    width: 0.68,
-    height: 0.75,
-    curvatureX: 0.48,
-    curvatureY: 0.12,
+    refPoint: { x: 1.02, y: -0.30, z: 0.85 },
+    width: 0.60,
+    height: 0.70,
+    curvatureX: 0.40,
+    curvatureY: 0.10,
+    surfaceOffset: 0.04,
   },
   
-  // Unknown: Fallback - center face position
+  // UNKNOWN: Fallback - center face
   unknown: {
-    refPoint: { x: 0, y: 0.20, z: 1.62 },
+    refPoint: { x: 0, y: 0.30, z: 1.65 },
     width: 1.0,
     height: 1.0,
-    curvatureX: 0.22,
-    curvatureY: 0.18,
+    curvatureX: 0.20,
+    curvatureY: 0.15,
+    surfaceOffset: 0.03,
   }
 };
 
-// Zone-specific configuration for procedural model (fallback)
+// Zone-specific configuration for procedural model (fallback when GLB fails)
 const ZONE_CONFIG_PROCEDURAL: Record<AnatomicalZone, { baseZ: number; curveFactor: number; yOffset: number }> = {
   glabella: { baseZ: 1.4, curveFactor: 0.15, yOffset: 0.2 },
   frontalis: { baseZ: 1.0, curveFactor: 0.25, yOffset: 0.3 },
@@ -235,62 +273,74 @@ const ZONE_CONFIG_PROCEDURAL: Record<AnatomicalZone, { baseZ: number; curveFacto
 /**
  * PRECISION 3D COORDINATE MAPPING FOR GLB MODEL
  * 
- * This function converts 2D percentage coordinates to precise 3D positions
- * that align exactly with the GLB model's surface. The algorithm:
+ * Converts 2D percentage coordinates (from AI analysis) to precise 3D positions
+ * that align exactly with the GLB model's surface mesh.
  * 
- * 1. Determines the anatomical zone from the muscle name
- * 2. Maps percentage coordinates relative to that zone's anchor point
- * 3. Applies zone-specific curvature to match the 3D surface
- * 4. Adds a small Z offset to ensure points render ON the surface (not inside)
+ * ALGORITHM:
+ * 1. Determine anatomical zone from muscle name
+ * 2. Convert percentage coords to normalized offset from zone center (-0.5 to +0.5)
+ * 3. Apply zone-specific dimensions to get 3D offset
+ * 4. Handle bilateral zones (periorbital, masseter) by mirroring for left side
+ * 5. Apply surface curvature to calculate Z depth
+ * 6. Add surface offset to ensure rendering ON surface (not inside mesh)
  * 
  * @param x - X coordinate as percentage (0-100, center at 50)
  * @param y - Y coordinate as percentage (0-100, top is 0)
- * @param zone - Anatomical zone for precise mapping
+ * @param zone - Anatomical zone for zone-specific mapping parameters
+ * @returns [x, y, z] 3D coordinates on GLB surface
  */
 function percentTo3DForGLB(x: number, y: number, zone?: AnatomicalZone): [number, number, number] {
   const effectiveZone = zone || 'unknown';
   const anchor = ANATOMICAL_ANCHORS[effectiveZone];
   
   // Convert percentage to normalized offset from zone center
-  // x: 0-100 → -0.5 to +0.5 (center at 0)
-  // y: 0-100 → +0.5 to -0.5 (inverted: top is positive in 3D)
+  // x: 0-100 → -0.5 to +0.5 (50 = center = 0)
+  // y: 0-100 → +0.5 to -0.5 (0 = top = +0.5, 100 = bottom = -0.5)
   const normalizedX = (x - 50) / 100;
   const normalizedY = (50 - y) / 100;
   
-  // Calculate offset from anchor point based on zone dimensions
+  // Scale normalized offset by zone dimensions
   const offsetX = normalizedX * anchor.width;
   const offsetY = normalizedY * anchor.height;
   
-  // Handle bilateral zones (periorbital, masseter) - mirror X for left side
-  let finalX = anchor.refPoint.x + offsetX;
-  
-  // For lateralized zones on left side (x < 50), mirror to negative X
+  // Calculate final X position
+  // For bilateral zones (periorbital, masseter), mirror for left side
+  let finalX: number;
   if (effectiveZone === 'periorbital' || effectiveZone === 'masseter') {
     if (x < 50) {
+      // Left side: mirror the reference point to negative X
       finalX = -anchor.refPoint.x + offsetX;
+    } else {
+      // Right side: use positive reference point
+      finalX = anchor.refPoint.x + offsetX;
     }
+  } else {
+    // Central zones: simple offset from center
+    finalX = anchor.refPoint.x + offsetX;
   }
   
+  // Calculate final Y position
   const finalY = anchor.refPoint.y + offsetY;
   
   // Calculate Z with anatomically-accurate surface curvature
-  // The face curves back as we move away from the center (laterally or vertically)
+  // The face curves BACK (Z decreases) as we move away from center
   const lateralDistance = Math.abs(finalX);
   const verticalDistance = Math.abs(finalY - GLB_MODEL_BOUNDS.centerY);
   
-  // Apply curvature: Z decreases (goes back) as distance increases
+  // Apply curvature: quadratic falloff for lateral, 1.5 power for vertical
   const lateralCurve = Math.pow(lateralDistance, 2) * anchor.curvatureX;
   const verticalCurve = Math.pow(verticalDistance, 1.5) * anchor.curvatureY;
   
-  // Surface Z with curvature applied
+  // Calculate surface Z with curvature applied
   let finalZ = anchor.refPoint.z - lateralCurve - verticalCurve;
   
-  // Add small offset to ensure point renders ON surface, not inside mesh
-  const surfaceOffset = 0.02;
-  finalZ += surfaceOffset;
+  // Add surface offset to ensure point renders ON surface (not inside mesh)
+  finalZ += anchor.surfaceOffset;
   
-  // Clamp Z to reasonable bounds (prevent points going inside head)
-  finalZ = Math.max(0.4, Math.min(2.2, finalZ));
+  // Clamp Z to reasonable bounds for GLB model
+  // Min 0.5 prevents points going inside head
+  // Max 2.1 prevents points floating in front of nose tip
+  finalZ = Math.max(0.5, Math.min(2.1, finalZ));
   
   return [finalX, finalY, finalZ];
 }
@@ -323,24 +373,49 @@ function getConfidenceRingScale(confidence: number): number {
   return 0.8 + confidence * 0.4;
 }
 
-// Convert 3D coordinates back to percentage
+// Convert 3D coordinates back to percentage - CALIBRATED TO GLB MODEL
+// Inverse of percentTo3DForGLB for edit mode point placement
 function threeDToPercent(x3d: number, y3d: number): { x: number; y: number } {
-  const x = ((x3d / 1.4) * 50) + 50;
-  const y = 50 - ((y3d - 0.2) / 1.8) * 50;
-  return { x: Math.round(x), y: Math.round(y) };
+  // Use GLB model bounds for accurate inverse mapping
+  // X: range approximately -1.2 to +1.2 → 0-100%
+  // Y: range approximately -1.0 to +1.5 → 100-0%
+  const x = ((x3d / 1.2) * 50) + 50;
+  const y = 50 - ((y3d - 0.2) / 1.25) * 50;
+  return { x: Math.round(Math.max(0, Math.min(100, x))), y: Math.round(Math.max(0, Math.min(100, y))) };
 }
 
-// Detect muscle from 3D position
+// Detect muscle from 3D position - CALIBRATED TO GLB MODEL
+// Uses GLB coordinate system for accurate muscle zone detection
 function detectMuscleFromPosition(x3d: number, y3d: number): string {
-  if (y3d > 0.5 && y3d < 0.9 && Math.abs(x3d) < 0.15) return "procerus";
-  if (y3d > 0.4 && y3d < 0.8 && x3d < -0.2 && x3d > -0.8) return "corrugator_left";
-  if (y3d > 0.4 && y3d < 0.8 && x3d > 0.2 && x3d < 0.8) return "corrugator_right";
+  // Frontalis: upper forehead (y > 1.0)
   if (y3d > 1.0) return "frontalis";
-  if (y3d > 0.1 && y3d < 0.6 && x3d < -0.4) return "orbicularis_oculi_left";
-  if (y3d > 0.1 && y3d < 0.6 && x3d > 0.4) return "orbicularis_oculi_right";
-  if (y3d > -0.2 && y3d < 0.3 && Math.abs(x3d) < 0.3) return "nasalis";
-  if (y3d > -0.8 && y3d < -0.3) return "orbicularis_oris";
-  if (y3d < -0.8) return "mentalis";
+  
+  // Procerus: center glabella (y 0.55-0.90, x near center)
+  if (y3d > 0.55 && y3d < 0.90 && Math.abs(x3d) < 0.20) return "procerus";
+  
+  // Corrugators: lateral to procerus (y 0.55-0.85, x 0.20-0.65)
+  if (y3d > 0.55 && y3d < 0.85 && x3d < -0.20 && x3d > -0.65) return "corrugator_left";
+  if (y3d > 0.55 && y3d < 0.85 && x3d > 0.20 && x3d < 0.65) return "corrugator_right";
+  
+  // Orbicularis oculi: lateral eye area (y 0.25-0.65, |x| > 0.50)
+  if (y3d > 0.25 && y3d < 0.65 && x3d < -0.50) return "orbicularis_oculi_left";
+  if (y3d > 0.25 && y3d < 0.65 && x3d > 0.50) return "orbicularis_oculi_right";
+  
+  // Nasalis: nose area (y -0.10 to 0.40, x near center)
+  if (y3d > -0.10 && y3d < 0.40 && Math.abs(x3d) < 0.30) return "nasalis";
+  
+  // Orbicularis oris: mouth area (y -0.65 to -0.25)
+  if (y3d > -0.65 && y3d < -0.25 && Math.abs(x3d) < 0.45) return "orbicularis_oris";
+  
+  // Mentalis: chin area (y < -0.65)
+  if (y3d < -0.65 && Math.abs(x3d) < 0.40) return "mentalis";
+  
+  // Masseter: lateral jaw (y -0.60 to 0.0, |x| > 0.70)
+  if (y3d > -0.60 && y3d < 0.0 && Math.abs(x3d) > 0.70) {
+    return x3d < 0 ? "masseter" : "masseter";
+  }
+  
+  // Default fallback
   return "procerus";
 }
 

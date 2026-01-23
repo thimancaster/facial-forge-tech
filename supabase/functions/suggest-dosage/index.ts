@@ -192,7 +192,8 @@ serve(async (req) => {
       .order('created_at', { ascending: true });
 
     if (analysesError) {
-      console.error('Error fetching analyses:', analysesError);
+      // Sanitized log - no error details exposed
+      console.error('[INTERNAL] DB query failed');
       return new Response(
         JSON.stringify({ error: 'Erro ao buscar histórico' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -229,7 +230,8 @@ serve(async (req) => {
     );
 
   } catch (error) {
-    console.error('Error in suggest-dosage:', error);
+    // Sanitized log - no stack trace or error details
+    console.error('[INTERNAL] Unhandled error in suggest-dosage');
     return new Response(
       JSON.stringify({ error: 'Erro interno do servidor' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

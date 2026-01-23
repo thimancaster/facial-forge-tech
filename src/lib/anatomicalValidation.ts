@@ -20,54 +20,68 @@ export interface ValidationError {
   affectedPoints: string[];
 }
 
-// Danger zone coordinates (normalized 0-100)
+// Danger zone coordinates (normalized 0-100, matching AI output * 100)
+// Based on: Brazilian Consensus 2024, Carruthers & Carruthers guidelines
 const DANGER_ZONES = [
   {
     id: "orbital_margin_left",
     label: "Margem Orbital Esquerda",
-    bounds: { xMin: 25, xMax: 45, yMin: 28, yMax: 40 },
-    reason: "Risco de ptose palpebral",
+    bounds: { xMin: 28, xMax: 44, yMin: 28, yMax: 36 },
+    reason: "Risco de ptose palpebral - manter 2cm acima",
   },
   {
     id: "orbital_margin_right",
     label: "Margem Orbital Direita",
-    bounds: { xMin: 55, xMax: 75, yMin: 28, yMax: 40 },
-    reason: "Risco de ptose palpebral",
+    bounds: { xMin: 56, xMax: 72, yMin: 28, yMax: 36 },
+    reason: "Risco de ptose palpebral - manter 2cm acima",
   },
   {
     id: "infraorbital_left",
     label: "Área Infraorbital Esquerda",
-    bounds: { xMin: 25, xMax: 42, yMin: 42, yMax: 55 },
-    reason: "Risco de difusão para músculos oculares",
+    bounds: { xMin: 28, xMax: 42, yMin: 44, yMax: 55 },
+    reason: "Risco de difusão para músculos oculares e zigomático",
   },
   {
     id: "infraorbital_right",
     label: "Área Infraorbital Direita",
-    bounds: { xMin: 58, xMax: 75, yMin: 42, yMax: 55 },
-    reason: "Risco de difusão para músculos oculares",
+    bounds: { xMin: 58, xMax: 72, yMin: 44, yMax: 55 },
+    reason: "Risco de difusão para músculos oculares e zigomático",
   },
   {
     id: "labial_commissure_left",
     label: "Comissura Labial Esquerda",
-    bounds: { xMin: 30, xMax: 42, yMin: 60, yMax: 70 },
-    reason: "Risco de assimetria do sorriso",
+    bounds: { xMin: 32, xMax: 44, yMin: 62, yMax: 72 },
+    reason: "Risco de assimetria do sorriso e boca caída",
   },
   {
     id: "labial_commissure_right",
     label: "Comissura Labial Direita",
-    bounds: { xMin: 58, xMax: 70, yMin: 60, yMax: 70 },
-    reason: "Risco de assimetria do sorriso",
+    bounds: { xMin: 56, xMax: 68, yMin: 62, yMax: 72 },
+    reason: "Risco de assimetria do sorriso e boca caída",
+  },
+  {
+    id: "mediopupilar_line_left",
+    label: "Linha Mediopupilar Esquerda",
+    bounds: { xMin: 33, xMax: 37, yMin: 30, yMax: 42 },
+    reason: "Limite lateral para injeções glabelares - risco de ptose",
+  },
+  {
+    id: "mediopupilar_line_right",
+    label: "Linha Mediopupilar Direita",
+    bounds: { xMin: 63, xMax: 67, yMin: 30, yMax: 42 },
+    reason: "Limite lateral para injeções glabelares - risco de ptose",
   },
 ];
 
 // Spatial hierarchy rules (Y coordinates should follow this order)
+// Calibrated for AI output coordinates (0-100 scale)
 const SPATIAL_HIERARCHY = [
-  { zone: "frontalis", maxY: 25 },
-  { zone: "glabella", minY: 28, maxY: 42 },
-  { zone: "periorbital", minY: 35, maxY: 52 },
-  { zone: "nasal", minY: 40, maxY: 55 },
-  { zone: "perioral", minY: 55, maxY: 75 },
-  { zone: "mentalis", minY: 70, maxY: 95 },
+  { zone: "frontalis", maxY: 28, minY: 8 },      // Testa: y=10-22% é seguro, máximo absoluto 28
+  { zone: "glabella", minY: 30, maxY: 42 },      // Glabela: y=35-37% ideal
+  { zone: "periorbital", minY: 34, maxY: 52 },   // Periorbital: y=36-48% 
+  { zone: "nasal", minY: 40, maxY: 52 },         // Nasal: y=42-48%
+  { zone: "perioral", minY: 55, maxY: 78 },      // Perioral: abaixo do nariz
+  { zone: "mentalis", minY: 72, maxY: 98 },      // Mentual: área do queixo
 ];
 
 // Check bilateral symmetry

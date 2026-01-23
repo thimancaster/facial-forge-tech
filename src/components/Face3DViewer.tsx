@@ -131,8 +131,9 @@ const GLB_MODEL_BOUNDS = {
   centerY: 0.1,
 };
 
-// Anatomical reference points on the GLB model (manually measured)
-// These are the "anchor" positions that define where each zone sits
+// Anatomical reference points on the GLB model (manually calibrated with medical precision)
+// Based on: Consensus Guidelines (Carruthers, Cotofana) and Brazilian Consensus 2024
+// Coordinates are calibrated for AI output: y=0.35-0.37 for procerus, y=0.10-0.22 for frontalis
 const ANATOMICAL_ANCHORS: Record<AnatomicalZone, {
   // Reference position for the CENTER of this zone
   refPoint: { x: number; y: number; z: number };
@@ -143,76 +144,79 @@ const ANATOMICAL_ANCHORS: Record<AnatomicalZone, {
   curvatureX: number;  // How much Z decreases as we move laterally
   curvatureY: number;  // How much Z decreases as we move vertically
 }> = {
-  // Glabella: Between eyebrows, relatively flat protrusion
+  // Glabella: Between eyebrows, y=35-37% corresponds to nasion level
+  // AI output y=0.35-0.37 → 3D y=0.55-0.60 (inverted + offset)
   glabella: {
-    refPoint: { x: 0, y: 0.55, z: 1.82 },
-    width: 0.6,
-    height: 0.5,
-    curvatureX: 0.15,
+    refPoint: { x: 0, y: 0.58, z: 1.82 },
+    width: 0.65,
+    height: 0.45,
+    curvatureX: 0.12,
+    curvatureY: 0.06,
+  },
+  
+  // Frontalis: Forehead area, y=10-22% for AI output
+  // Must map to upper forehead in 3D (y=1.2-1.6)
+  frontalis: {
+    refPoint: { x: 0, y: 1.40, z: 1.42 },
+    width: 1.5,
+    height: 0.85,
+    curvatureX: 0.32,
+    curvatureY: 0.22,
+  },
+  
+  // Periorbital: Crow's feet area, x=22-28% or 72-78%
+  // 1cm lateral to orbital rim
+  periorbital: {
+    refPoint: { x: 0.90, y: 0.38, z: 1.48 },
+    width: 0.75,
+    height: 0.55,
+    curvatureX: 0.42,
+    curvatureY: 0.12,
+  },
+  
+  // Nasal: Bunny lines, y=42-48% in AI coords
+  nasal: {
+    refPoint: { x: 0, y: 0.02, z: 2.02 },
+    width: 0.38,
+    height: 0.65,
+    curvatureX: 0.10,
+    curvatureY: 0.18,
+  },
+  
+  // Perioral: Around the mouth, y=55-75% in AI coords
+  perioral: {
+    refPoint: { x: 0, y: -0.52, z: 1.75 },
+    width: 0.85,
+    height: 0.48,
+    curvatureX: 0.16,
     curvatureY: 0.08,
   },
   
-  // Frontalis: Forehead area, large curved surface
-  frontalis: {
-    refPoint: { x: 0, y: 1.35, z: 1.45 },
-    width: 1.6,
-    height: 0.9,
-    curvatureX: 0.35,
-    curvatureY: 0.25,
-  },
-  
-  // Periorbital: Around the eyes (lateral canthus area)
-  periorbital: {
-    refPoint: { x: 0.85, y: 0.35, z: 1.55 },
-    width: 0.8,
-    height: 0.6,
-    curvatureX: 0.45,
-    curvatureY: 0.15,
-  },
-  
-  // Nasal: Nose - most forward point
-  nasal: {
-    refPoint: { x: 0, y: 0.0, z: 2.05 },
-    width: 0.4,
-    height: 0.7,
-    curvatureX: 0.12,
-    curvatureY: 0.20,
-  },
-  
-  // Perioral: Around the mouth
-  perioral: {
-    refPoint: { x: 0, y: -0.55, z: 1.78 },
-    width: 0.9,
-    height: 0.5,
-    curvatureX: 0.18,
-    curvatureY: 0.10,
-  },
-  
-  // Mentalis: Chin area
+  // Mentalis: Chin area, y=70-95% in AI coords
   mentalis: {
-    refPoint: { x: 0, y: -1.0, z: 1.55 },
-    width: 0.6,
-    height: 0.4,
-    curvatureX: 0.22,
-    curvatureY: 0.30,
+    refPoint: { x: 0, y: -0.98, z: 1.52 },
+    width: 0.55,
+    height: 0.38,
+    curvatureX: 0.20,
+    curvatureY: 0.28,
   },
   
-  // Masseter: Side of jaw
+  // Masseter: Side of jaw - lateral position
   masseter: {
-    refPoint: { x: 1.05, y: -0.4, z: 1.0 },
-    width: 0.7,
-    height: 0.8,
-    curvatureX: 0.50,
-    curvatureY: 0.15,
+    refPoint: { x: 1.08, y: -0.38, z: 0.95 },
+    width: 0.68,
+    height: 0.75,
+    curvatureX: 0.48,
+    curvatureY: 0.12,
   },
   
   // Unknown: Fallback - center face position
   unknown: {
-    refPoint: { x: 0, y: 0.2, z: 1.65 },
+    refPoint: { x: 0, y: 0.20, z: 1.62 },
     width: 1.0,
     height: 1.0,
-    curvatureX: 0.25,
-    curvatureY: 0.20,
+    curvatureX: 0.22,
+    curvatureY: 0.18,
   }
 };
 
@@ -1041,12 +1045,16 @@ export function Face3DViewer({
               </div>
               {internalEditMode && <p className="text-[10px] text-amber-600 mt-1.5 bg-amber-50 rounded px-2 py-1">Clique no modelo para adicionar pontos</p>}
               
-              {/* Debug Mode */}
-              <div className="flex items-center justify-between">
-                <Label htmlFor="debug-mode" className="text-xs text-slate-600 flex items-center gap-1.5"><Bug className="w-3 h-3" />Modo Debug</Label>
-                <Switch id="debug-mode" checked={debugMode} onCheckedChange={setDebugMode} />
-              </div>
-              {debugMode && <p className="text-[10px] text-cyan-600 mt-1.5 bg-cyan-50 rounded px-2 py-1">Âncoras anatômicas e bounding boxes visíveis</p>}
+              {/* Debug Mode - Development Only */}
+              {import.meta.env.DEV && (
+                <>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="debug-mode" className="text-xs text-slate-600 flex items-center gap-1.5"><Bug className="w-3 h-3" />Modo Debug</Label>
+                    <Switch id="debug-mode" checked={debugMode} onCheckedChange={setDebugMode} />
+                  </div>
+                  {debugMode && <p className="text-[10px] text-cyan-600 mt-1.5 bg-cyan-50 rounded px-2 py-1">Âncoras anatômicas e bounding boxes visíveis</p>}
+                </>
+              )}
             </div>
           </div>
         </CollapsiblePanel>

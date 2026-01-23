@@ -118,8 +118,11 @@ export function NewAnalysisWizard({ initialPatientId }: NewAnalysisWizardProps) 
           description: "Dados carregados. Configure o tratamento.",
         });
       }
-    } catch (err) {
-      console.error('Error loading patient:', err);
+    } catch {
+      // Sanitized - no error details logged in production
+      if (import.meta.env.DEV) {
+        console.error('[DEV] Patient load failed');
+      }
     }
   };
   

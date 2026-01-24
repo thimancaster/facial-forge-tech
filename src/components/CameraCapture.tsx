@@ -1,9 +1,16 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { Camera, X, SwitchCamera, Loader2, Info } from "lucide-react";
+import { Camera, X, SwitchCamera, Loader2, Info, Layers } from "lucide-react";
+import { useMediaPipeFaceMesh, EnhancedFaceQuality } from "@/hooks/useMediaPipeFaceMesh";
 import { useFaceDetection } from "@/hooks/useFaceDetection";
+import { useProfileAngleDetection } from "@/hooks/useDeviceOrientation";
+import { useImageSharpness } from "@/hooks/useImageSharpness";
 import { FaceFramingOverlay } from "@/components/camera/FaceFramingOverlay";
+import { DynamicFaceMeshOverlay } from "@/components/camera/DynamicFaceMeshOverlay";
+import { ProfileAngleGuide } from "@/components/camera/ProfileAngleGuide";
+import { PreviousPhotoOverlay } from "@/components/camera/PreviousPhotoOverlay";
+import { EnhancedQualityIndicator, EnhancedQualityIndicatorCompact } from "@/components/camera/EnhancedQualityIndicator";
 import { QualityIndicator, QualityIndicatorCompact } from "@/components/camera/QualityIndicator";
 import { cn } from "@/lib/utils";
 
@@ -23,6 +30,7 @@ interface CameraCaptureProps {
   onCapture: (file: File) => void;
   photoLabel: string;
   photoType: PhotoType;
+  previousPhotoUrl?: string | null;
 }
 
 const PHOTO_GUIDES: Record<PhotoType, { title: string; instruction: string; tip: string }> = {
@@ -68,7 +76,14 @@ const PHOTO_GUIDES: Record<PhotoType, { title: string; instruction: string; tip:
   },
 };
 
-export function CameraCapture({ isOpen, onClose, onCapture, photoLabel, photoType }: CameraCaptureProps) {
+export function CameraCapture({ 
+  isOpen, 
+  onClose, 
+  onCapture, 
+  photoLabel, 
+  photoType,
+  previousPhotoUrl = null,
+}: CameraCaptureProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -82,22 +97,61 @@ export function CameraCapture({ isOpen, onClose, onCapture, photoLabel, photoTyp
   const [captureEnabled, setCaptureEnabled] = useState(false);
   const [autoCapture, setAutoCapture] = useState(false);
   const [countdown, setCountdown] = useState<number | null>(null);
+  const [useEnhancedDetection, setUseEnhancedDetection] = useState(true);
+  const [showLandmarks, setShowLandmarks] = useState(false);
 
   const guide = PHOTO_GUIDES[photoType];
+  const isProfile = photoType === 'profile_left' || photoType === 'profile_right';
 
-  // Face detection with quality feedback
-  const faceDetection = useFaceDetection(videoRef, {
-    onResult: (result) => {
-      // Enable capture only when quality is good enough
-      const canCapture = result.quality.overallScore >= 50;
-      setCaptureEnabled(canCapture);
-
-      // Auto-capture when quality is excellent and auto-capture is enabled
-      if (autoCapture && result.quality.overallScore >= 75 && countdown === null) {
-        startCountdown();
-      }
-    },
+  // MediaPipe Face Mesh (enhanced detection with 468 landmarks)
+  const mediaPipe = useMediaPipeFaceMesh(videoRef, {
+    detectionInterval: 100,
+    enableSharpnessCheck: true,
   });
+
+  // Fallback basic detection
+  const basicDetection = useFaceDetection(videoRef, { detectionInterval: 200 });
+
+  // Profile angle detection via gyroscope
+  const profileAngle = useProfileAngleDetection(
+    isProfile ? photoType : null,
+    { tolerance: 15 }
+  );
+
+  // Image sharpness analysis
+  const { analyzeVideoFrame } = useImageSharpness({ sharpnessThreshold: 40 });
+
+  // Determine which detection to use
+  const useMediaPipe = useEnhancedDetection && mediaPipe.isReady;
+  const currentQuality: EnhancedFaceQuality = useMediaPipe 
+    ? mediaPipe.quality 
+    : {
+        ...basicDetection.quality,
+        isSharp: true,
+        isSymmetric: true,
+        hasCorrectExpression: true,
+        faceCenterOffset: { x: 0, y: 0 },
+        faceRotation: { pitch: 0, yaw: 0, roll: 0 },
+        faceSizeRatio: 0,
+        symmetryScore: 100,
+        sharpnessScore: 100,
+        brightnessLevel: 128,
+      };
+
+  // Update capture state based on quality
+  useEffect(() => {
+    const canCapture = currentQuality.overallScore >= 50;
+    setCaptureEnabled(canCapture);
+
+    // Auto-capture when quality is excellent
+    if (autoCapture && currentQuality.overallScore >= 75 && countdown === null) {
+      // For profiles, also check gyroscope angle
+      if (isProfile && profileAngle.result && !profileAngle.result.isCorrectAngle) {
+        return;
+      }
+      startCountdown();
+    }
+  }, [currentQuality.overallScore, autoCapture, countdown, isProfile, profileAngle.result]);
 
   const startCountdown = useCallback(() => {
     setCountdown(3);
@@ -154,6 +208,11 @@ export function CameraCapture({ isOpen, onClose, onCapture, photoLabel, photoTyp
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
       }
+
+      // Request gyroscope permission for profiles on iOS
+      if (isProfile && profileAngle.isSupported && !profileAngle.permissionGranted) {
+        profileAngle.requestPermission();
+      }
     } catch (err: any) {
       if (import.meta.env.DEV) {
         console.error("Camera error:", err);
@@ -168,7 +227,7 @@ export function CameraCapture({ isOpen, onClose, onCapture, photoLabel, photoTyp
     } finally {
       setIsLoading(false);
     }
-  }, [facingMode, stream]);
+  }, [facingMode, stream, isProfile, profileAngle]);
 
   useEffect(() => {
     if (isOpen) {
@@ -241,6 +300,19 @@ export function CameraCapture({ isOpen, onClose, onCapture, photoLabel, photoTyp
                 <span className="text-white/70 text-xs">{guide.title}</span>
               </div>
               <div className="flex items-center gap-2">
+                {/* Toggle landmarks visibility */}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className={cn(
+                    "w-8 h-8",
+                    showLandmarks ? "text-purple-400 bg-purple-500/20" : "text-white/70 hover:text-white hover:bg-white/20"
+                  )}
+                  onClick={() => setShowLandmarks(!showLandmarks)}
+                  title="Mostrar landmarks"
+                >
+                  <Layers className="w-4 h-4" />
+                </Button>
                 <Button
                   variant="ghost"
                   size="icon"
@@ -295,6 +367,14 @@ export function CameraCapture({ isOpen, onClose, onCapture, photoLabel, photoTyp
             style={{ transform: facingMode === "user" ? "scaleX(-1)" : "none" }}
           />
 
+          {/* Previous photo overlay for comparison */}
+          <PreviousPhotoOverlay
+            previousPhotoUrl={previousPhotoUrl}
+            containerWidth={containerDimensions.width}
+            containerHeight={containerDimensions.height}
+            isMirrored={facingMode === "user"}
+          />
+
           {/* Flash effect overlay */}
           {flashActive && (
             <div className="absolute inset-0 bg-white z-30 animate-fade-out" />
@@ -309,12 +389,37 @@ export function CameraCapture({ isOpen, onClose, onCapture, photoLabel, photoTyp
             </div>
           )}
 
-          {/* Face framing overlay with anatomical guides */}
-          {!isLoading && !error && (
+          {/* Dynamic face mesh overlay (MediaPipe landmarks) */}
+          {!isLoading && !error && useMediaPipe && mediaPipe.result && (
+            <DynamicFaceMeshOverlay
+              photoType={photoType}
+              faceMesh={mediaPipe.result}
+              containerWidth={containerDimensions.width}
+              containerHeight={containerDimensions.height}
+              qualityScore={currentQuality.overallScore}
+              showLandmarks={showLandmarks}
+              showConnections={showLandmarks}
+              isMirrored={facingMode === "user"}
+            />
+          )}
+
+          {/* Fallback static framing overlay */}
+          {!isLoading && !error && (!useMediaPipe || !mediaPipe.result) && (
             <FaceFramingOverlay
               photoType={photoType}
-              quality={faceDetection.quality}
-              landmarks={faceDetection.landmarks}
+              quality={basicDetection.quality}
+              landmarks={basicDetection.landmarks}
+              containerWidth={containerDimensions.width}
+              containerHeight={containerDimensions.height}
+            />
+          )}
+
+          {/* Profile angle guide (gyroscope) */}
+          {isProfile && (
+            <ProfileAngleGuide
+              profileType={photoType as 'profile_left' | 'profile_right'}
+              angleResult={profileAngle.result}
+              isSupported={profileAngle.isSupported}
               containerWidth={containerDimensions.width}
               containerHeight={containerDimensions.height}
             />
@@ -323,7 +428,11 @@ export function CameraCapture({ isOpen, onClose, onCapture, photoLabel, photoTyp
           {/* Quality indicator - compact version at top */}
           {!isLoading && !error && (
             <div className="absolute top-20 left-0 right-0 z-20 flex justify-center px-4">
-              <QualityIndicatorCompact quality={faceDetection.quality} />
+              {useMediaPipe ? (
+                <EnhancedQualityIndicatorCompact quality={currentQuality} />
+              ) : (
+                <QualityIndicatorCompact quality={basicDetection.quality} />
+              )}
             </div>
           )}
 
@@ -341,7 +450,11 @@ export function CameraCapture({ isOpen, onClose, onCapture, photoLabel, photoTyp
           <div className="absolute bottom-0 left-0 right-0 z-20 p-4 bg-gradient-to-t from-black/80 to-transparent">
             {/* Quality indicator - full version */}
             <div className="mb-4">
-              <QualityIndicator quality={faceDetection.quality} showDetails />
+              {useMediaPipe ? (
+                <EnhancedQualityIndicator quality={currentQuality} showDetails showSharpness />
+              ) : (
+                <QualityIndicator quality={basicDetection.quality} showDetails />
+              )}
             </div>
 
             <div className="flex items-center justify-center gap-6">
@@ -368,7 +481,6 @@ export function CameraCapture({ isOpen, onClose, onCapture, photoLabel, photoTyp
                 )}
                 aria-label="Capturar foto"
               >
-                {/* Inner circle indicator */}
                 <div className={cn(
                   "w-full h-full rounded-full transition-colors",
                   captureEnabled && "animate-pulse"

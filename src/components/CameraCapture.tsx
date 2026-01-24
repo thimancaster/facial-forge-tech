@@ -1,17 +1,21 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
-import { Camera, X, SwitchCamera, Loader2, Info, Layers } from "lucide-react";
-import { useMediaPipeFaceMesh, EnhancedFaceQuality } from "@/hooks/useMediaPipeFaceMesh";
+import { Camera, X, SwitchCamera, Loader2, Info, Layers, Sparkles } from "lucide-react";
+import { useMediaPipeFaceMesh, EnhancedFaceQuality, MediaPipeLandmark } from "@/hooks/useMediaPipeFaceMesh";
 import { useFaceDetection } from "@/hooks/useFaceDetection";
 import { useProfileAngleDetection } from "@/hooks/useDeviceOrientation";
 import { useImageSharpness } from "@/hooks/useImageSharpness";
+import { useExpressionDetection } from "@/hooks/useExpressionDetection";
+import { useLandmarkConsistency, StoredLandmarkReference, createLandmarkReference } from "@/hooks/useLandmarkConsistency";
 import { FaceFramingOverlay } from "@/components/camera/FaceFramingOverlay";
 import { DynamicFaceMeshOverlay } from "@/components/camera/DynamicFaceMeshOverlay";
 import { ProfileAngleGuide } from "@/components/camera/ProfileAngleGuide";
 import { PreviousPhotoOverlay } from "@/components/camera/PreviousPhotoOverlay";
 import { EnhancedQualityIndicator, EnhancedQualityIndicatorCompact } from "@/components/camera/EnhancedQualityIndicator";
 import { QualityIndicator, QualityIndicatorCompact } from "@/components/camera/QualityIndicator";
+import { ExpressionIndicator, ExpressionIndicatorCompact } from "@/components/camera/ExpressionIndicator";
+import { ConsistencyIndicator, ConsistencyIndicatorCompact } from "@/components/camera/ConsistencyIndicator";
 import { cn } from "@/lib/utils";
 
 export type PhotoType = 
@@ -27,10 +31,11 @@ export type PhotoType =
 interface CameraCaptureProps {
   isOpen: boolean;
   onClose: () => void;
-  onCapture: (file: File) => void;
+  onCapture: (file: File, landmarkReference?: StoredLandmarkReference) => void;
   photoLabel: string;
   photoType: PhotoType;
   previousPhotoUrl?: string | null;
+  previousLandmarks?: StoredLandmarkReference | null;
 }
 
 const PHOTO_GUIDES: Record<PhotoType, { title: string; instruction: string; tip: string }> = {
@@ -83,6 +88,7 @@ export function CameraCapture({
   photoLabel, 
   photoType,
   previousPhotoUrl = null,
+  previousLandmarks = null,
 }: CameraCaptureProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -99,6 +105,7 @@ export function CameraCapture({
   const [countdown, setCountdown] = useState<number | null>(null);
   const [useEnhancedDetection, setUseEnhancedDetection] = useState(true);
   const [showLandmarks, setShowLandmarks] = useState(false);
+  const [smartAutoCapture, setSmartAutoCapture] = useState(true); // Expression-based auto-capture
 
   const guide = PHOTO_GUIDES[photoType];
   const isProfile = photoType === 'profile_left' || photoType === 'profile_right';
@@ -121,6 +128,18 @@ export function CameraCapture({
   // Image sharpness analysis
   const { analyzeVideoFrame } = useImageSharpness({ sharpnessThreshold: 40 });
 
+  // Expression detection (smile, frown, etc.)
+  const expressionResult = useExpressionDetection(
+    mediaPipe.landmarks,
+    photoType
+  );
+
+  // Session consistency validation (compare with previous photo landmarks)
+  const consistencyResult = useLandmarkConsistency(
+    mediaPipe.landmarks,
+    previousLandmarks
+  );
+
   // Determine which detection to use
   const useMediaPipe = useEnhancedDetection && mediaPipe.isReady;
   const currentQuality: EnhancedFaceQuality = useMediaPipe 
@@ -138,20 +157,40 @@ export function CameraCapture({
         brightnessLevel: 128,
       };
 
+  // Calculate if all conditions are met for smart auto-capture
+  const isReadyForSmartCapture = useMemo(() => {
+    const qualityOk = currentQuality.overallScore >= 70;
+    const expressionOk = expressionResult.isCorrectExpression;
+    const consistencyOk = !previousLandmarks || consistencyResult.isConsistent;
+    const profileOk = !isProfile || (profileAngle.result?.isCorrectAngle ?? false);
+    
+    return qualityOk && expressionOk && consistencyOk && profileOk;
+  }, [
+    currentQuality.overallScore,
+    expressionResult.isCorrectExpression,
+    consistencyResult.isConsistent,
+    previousLandmarks,
+    isProfile,
+    profileAngle.result,
+  ]);
+
   // Update capture state based on quality
   useEffect(() => {
     const canCapture = currentQuality.overallScore >= 50;
     setCaptureEnabled(canCapture);
 
-    // Auto-capture when quality is excellent
-    if (autoCapture && currentQuality.overallScore >= 75 && countdown === null) {
-      // For profiles, also check gyroscope angle
+    // Smart auto-capture when all conditions are met
+    if (smartAutoCapture && autoCapture && isReadyForSmartCapture && countdown === null) {
+      startCountdown();
+    }
+    // Fallback: regular auto-capture based on quality only
+    else if (!smartAutoCapture && autoCapture && currentQuality.overallScore >= 75 && countdown === null) {
       if (isProfile && profileAngle.result && !profileAngle.result.isCorrectAngle) {
         return;
       }
       startCountdown();
     }
-  }, [currentQuality.overallScore, autoCapture, countdown, isProfile, profileAngle.result]);
+  }, [currentQuality.overallScore, autoCapture, countdown, isProfile, profileAngle.result, isReadyForSmartCapture, smartAutoCapture]);
 
   const startCountdown = useCallback(() => {
     setCountdown(3);
@@ -264,16 +303,21 @@ export function CameraCapture({
     setFlashActive(true);
     setTimeout(() => setFlashActive(false), 150);
 
+    // Create landmark reference to store with the photo
+    const landmarkReference = mediaPipe.landmarks 
+      ? createLandmarkReference(mediaPipe.landmarks, photoType)
+      : undefined;
+
     canvas.toBlob((blob) => {
       if (blob) {
         const file = new File([blob], `${photoType}-${Date.now()}.jpg`, {
           type: "image/jpeg",
         });
-        onCapture(file);
+        onCapture(file, landmarkReference || undefined);
         handleClose();
       }
     }, "image/jpeg", 0.9);
-  }, [facingMode, photoType, onCapture]);
+  }, [facingMode, photoType, onCapture, mediaPipe.landmarks]);
 
   const handleClose = () => {
     if (stream) {
@@ -425,19 +469,30 @@ export function CameraCapture({
             />
           )}
 
-          {/* Quality indicator - compact version at top */}
+          {/* Quality and expression indicators - compact versions at top */}
           {!isLoading && !error && (
-            <div className="absolute top-20 left-0 right-0 z-20 flex justify-center px-4">
-              {useMediaPipe ? (
-                <EnhancedQualityIndicatorCompact quality={currentQuality} />
-              ) : (
-                <QualityIndicatorCompact quality={basicDetection.quality} />
-              )}
+            <div className="absolute top-20 left-0 right-0 z-20 px-4">
+              <div className="flex flex-wrap justify-center gap-2">
+                {useMediaPipe ? (
+                  <EnhancedQualityIndicatorCompact quality={currentQuality} />
+                ) : (
+                  <QualityIndicatorCompact quality={basicDetection.quality} />
+                )}
+                {useMediaPipe && !isProfile && (
+                  <ExpressionIndicatorCompact expressionResult={expressionResult} />
+                )}
+                {useMediaPipe && previousLandmarks && (
+                  <ConsistencyIndicatorCompact 
+                    consistencyResult={consistencyResult} 
+                    hasReference={!!previousLandmarks} 
+                  />
+                )}
+              </div>
             </div>
           )}
 
           {/* Instruction panel */}
-          <div className="absolute bottom-32 left-0 right-0 z-20 text-center px-4">
+          <div className="absolute bottom-44 left-0 right-0 z-20 text-center px-4">
             <p className="text-white/90 text-sm font-medium bg-black/50 backdrop-blur-sm rounded-lg px-4 py-2 inline-block">
               {guide.instruction}
             </p>
@@ -448,6 +503,24 @@ export function CameraCapture({
 
           {/* Controls */}
           <div className="absolute bottom-0 left-0 right-0 z-20 p-4 bg-gradient-to-t from-black/80 to-transparent">
+            {/* Expression and consistency indicators */}
+            {useMediaPipe && !isProfile && (
+              <div className="mb-2 space-y-2">
+                <ExpressionIndicator 
+                  expressionResult={expressionResult} 
+                  photoType={photoType}
+                  showDetails
+                />
+                {previousLandmarks && (
+                  <ConsistencyIndicator 
+                    consistencyResult={consistencyResult}
+                    hasReference={!!previousLandmarks}
+                    showDetails
+                  />
+                )}
+              </div>
+            )}
+            
             {/* Quality indicator - full version */}
             <div className="mb-4">
               {useMediaPipe ? (
@@ -510,9 +583,11 @@ export function CameraCapture({
 
             {/* Help text */}
             <p className="text-center text-white/50 text-xs mt-3">
-              {captureEnabled 
-                ? "Posição ideal — pode capturar!" 
-                : "Ajuste a posição para liberar captura"}
+              {isReadyForSmartCapture 
+                ? "✓ Expressão e posição ideais — pode capturar!" 
+                : captureEnabled 
+                  ? "Ajuste a expressão facial conforme instrução"
+                  : "Ajuste a posição para liberar captura"}
             </p>
           </div>
         </div>

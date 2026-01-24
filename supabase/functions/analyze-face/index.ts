@@ -337,7 +337,7 @@ async function callAIWithRetry(
     // If rate limited and we have retries left, wait and retry
     if (response.status === 429 && retryCount < MAX_RETRIES) {
       const delay = RETRY_DELAY_MS * Math.pow(2, retryCount); // Exponential backoff
-      console.log(`Rate limited, retrying in ${delay}ms (attempt ${retryCount + 1}/${MAX_RETRIES})`);
+      // Rate limit retry - no sensitive data logged
       await sleep(delay);
       return callAIWithRetry(apiKey, content, retryCount + 1);
     }
@@ -346,7 +346,7 @@ async function callAIWithRetry(
   } catch (error) {
     if (retryCount < MAX_RETRIES) {
       const delay = RETRY_DELAY_MS * Math.pow(2, retryCount);
-      console.log(`Network error, retrying in ${delay}ms (attempt ${retryCount + 1}/${MAX_RETRIES})`);
+      // Network error retry - no sensitive data logged
       await sleep(delay);
       return callAIWithRetry(apiKey, content, retryCount + 1);
     }
@@ -368,8 +368,8 @@ function parseAIResponse(aiResponse: string): any {
       try {
         const jsonStr = match[1] || match[0];
         return JSON.parse(jsonStr.trim());
-      } catch (e) {
-        console.log("Pattern match failed to parse, trying next pattern");
+      } catch {
+        // Pattern match failed to parse, trying next pattern
         continue;
       }
     }
@@ -378,8 +378,7 @@ function parseAIResponse(aiResponse: string): any {
   // Try parsing the entire response as JSON
   try {
     return JSON.parse(aiResponse.trim());
-  } catch (e) {
-    console.error("All parsing attempts failed");
+  } catch {
     throw new Error("Failed to parse AI response as JSON");
   }
 }
@@ -571,7 +570,7 @@ serve(async (req) => {
     // ============ AUTHENTICATION CHECK ============
     const authHeader = req.headers.get('Authorization');
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      console.error('[AUTH] Missing or invalid authorization header');
+      // [AUTH] Missing or invalid authorization header
       return new Response(
         JSON.stringify({ error: 'Autenticação necessária' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -594,7 +593,7 @@ serve(async (req) => {
     const { data: claimsData, error: authError } = await supabaseClient.auth.getClaims(token);
 
     if (authError || !claimsData?.claims) {
-      console.error('[AUTH] Authentication failed:', authError?.message);
+      // [AUTH] Authentication failed
       return new Response(
         JSON.stringify({ error: 'Não autorizado' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -602,7 +601,7 @@ serve(async (req) => {
     }
 
     const userId = claimsData.claims.sub;
-    console.log(`[AUTH] Authenticated request from user: ${userId}`);
+    // Request authenticated successfully
 
     // ============ END AUTHENTICATION ============
 
@@ -610,8 +609,8 @@ serve(async (req) => {
     let body: RequestBody;
     try {
       body = await req.json();
-    } catch (e) {
-      console.error("Failed to parse request body:", e);
+    } catch {
+      // Failed to parse request body
       return new Response(
         JSON.stringify({ error: "Corpo da requisição inválido" }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -621,7 +620,7 @@ serve(async (req) => {
     // ============ INPUT VALIDATION ============
     const validation = validateRequestBody(body);
     if (!validation.valid) {
-      console.error("Validation errors:", validation.errors);
+      // Validation errors - not logged to avoid leaking input data
       return new Response(
         JSON.stringify({ 
           error: "Dados de entrada inválidos",
@@ -636,7 +635,7 @@ serve(async (req) => {
     // Filter valid URLs (validated above, but double-check)
     const validUrls = imageUrls!.filter(validateImageUrl);
     if (validUrls.length === 0) {
-      console.error("No valid image URLs found after filtering");
+      // No valid image URLs found after filtering
       return new Response(
         JSON.stringify({ error: "Nenhuma URL de imagem válida fornecida" }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -646,7 +645,7 @@ serve(async (req) => {
     // Check API key
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     if (!LOVABLE_API_KEY) {
-      console.error("LOVABLE_API_KEY not configured");
+      // LOVABLE_API_KEY not configured
       return new Response(
         JSON.stringify({ error: "Serviço de IA não configurado" }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -696,14 +695,14 @@ Analise cuidadosamente e retorne o JSON estruturado conforme especificado.`
       });
     }
 
-    console.log(`Calling Lovable AI with ${validUrls.length} images`);
+    // Calling Lovable AI with images
 
     // Call AI with retry logic
     let response;
     try {
       response = await callAIWithRetry(LOVABLE_API_KEY, content);
-    } catch (networkError) {
-      console.error("Network error after retries:", networkError);
+    } catch {
+      // Network error after retries - return fallback
       // Return fallback analysis
       const fallback = getDefaultAnalysis(gender);
       const result = convertToLegacyFormat(fallback, gender);
@@ -715,8 +714,7 @@ Analise cuidadosamente e retorne o JSON estruturado conforme especificado.`
 
     // Handle non-OK responses
     if (!response.ok) {
-      // Log status only, not response body (may contain sensitive data)
-      console.error('[INTERNAL] AI request failed:', response.status);
+      // AI request failed - status only, not response body
       
       if (response.status === 429) {
         return new Response(
@@ -732,7 +730,6 @@ Analise cuidadosamente e retorne o JSON estruturado conforme especificado.`
       }
       
       // For other errors, return fallback
-      console.log("Returning fallback analysis due to AI error");
       const fallback = getDefaultAnalysis(gender);
       const result = convertToLegacyFormat(fallback, gender);
       return new Response(
@@ -745,8 +742,8 @@ Analise cuidadosamente e retorne o JSON estruturado conforme especificado.`
     let data;
     try {
       data = await response.json();
-    } catch (e) {
-      console.error("Failed to parse AI response as JSON:", e);
+    } catch {
+      // Failed to parse AI response as JSON
       const fallback = getDefaultAnalysis(gender);
       const result = convertToLegacyFormat(fallback, gender);
       return new Response(
@@ -758,7 +755,7 @@ Analise cuidadosamente e retorne o JSON estruturado conforme especificado.`
     const aiResponse = data.choices?.[0]?.message?.content;
 
     if (!aiResponse) {
-      console.error("No content in AI response");
+      // No content in AI response
       const fallback = getDefaultAnalysis(gender);
       const result = convertToLegacyFormat(fallback, gender);
       return new Response(
@@ -767,16 +764,15 @@ Analise cuidadosamente e retorne o JSON estruturado conforme especificado.`
       );
     }
 
-    console.log("AI response received, parsing...");
+    // AI response received, parsing...
 
     // Parse the AI response
     let analysis;
     try {
       analysis = parseAIResponse(aiResponse);
-      console.log("Successfully parsed AI analysis");
-    } catch (parseError) {
-      // Log parse failure without raw response (may contain patient context)
-      console.error('[INTERNAL] Parse failed:', parseError instanceof Error ? parseError.message : 'Unknown');
+      // Successfully parsed AI analysis
+    } catch {
+      // Parse failed - return fallback
       
       // Return fallback
       const fallback = getDefaultAnalysis(gender);
@@ -790,19 +786,15 @@ Analise cuidadosamente e retorne o JSON estruturado conforme especificado.`
     // Convert to legacy format for backward compatibility
     const result = convertToLegacyFormat(analysis, gender);
 
-    console.log("Returning analysis with", result.injectionPoints?.length || 0, "injection points");
+    // Returning analysis
 
     return new Response(
       JSON.stringify(result),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
-  } catch (error) {
-    // Log error server-side with sanitization - don't log full stack traces
-    console.error('[INTERNAL] Unhandled error:', {
-      message: error instanceof Error ? error.message : 'Unknown',
-      timestamp: new Date().toISOString()
-    });
+  } catch {
+    // Unhandled error - no details logged
     
     // Return generic error to client - NO DETAILS exposed
     return new Response(

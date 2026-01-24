@@ -111,7 +111,10 @@ export default function PatientDetail() {
 
       setAnalyses(analysesData || []);
     } catch (err: any) {
-      console.error('Error fetching patient data:', err);
+      // Sanitized logging - only log in development
+      if (import.meta.env.DEV) {
+        console.error('Error fetching patient data:', err);
+      }
       setError(err.message || 'Erro ao carregar dados do paciente');
       toast({
         title: "Erro",

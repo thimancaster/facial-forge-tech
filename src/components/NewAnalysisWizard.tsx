@@ -253,7 +253,9 @@ export function NewAnalysisWizard({ initialPatientId }: NewAnalysisWizardProps) 
       });
 
     if (uploadError) {
-      console.error('Upload error:', uploadError);
+      if (import.meta.env.DEV) {
+        console.error('Upload error:', uploadError);
+      }
       return null;
     }
 
@@ -263,7 +265,9 @@ export function NewAnalysisWizard({ initialPatientId }: NewAnalysisWizardProps) 
       .createSignedUrl(fileName, 60 * 60 * 24 * 365); // 1 year expiry
 
     if (urlError || !data) {
-      console.error('Failed to create signed URL:', urlError);
+      if (import.meta.env.DEV) {
+        console.error('Failed to create signed URL:', urlError);
+      }
       return null;
     }
 
@@ -364,7 +368,9 @@ export function NewAnalysisWizard({ initialPatientId }: NewAnalysisWizardProps) 
       });
 
       if (error) {
-        console.error('Analysis error:', error);
+        if (import.meta.env.DEV) {
+          console.error('Analysis error:', error);
+        }
         throw new Error(error.message || 'Erro na análise');
       }
 
@@ -377,7 +383,9 @@ export function NewAnalysisWizard({ initialPatientId }: NewAnalysisWizardProps) 
       });
       
     } catch (error: any) {
-      console.error('AI analysis failed:', error);
+      if (import.meta.env.DEV) {
+        console.error('AI analysis failed:', error);
+      }
       toast({
         title: "Erro na análise de IA",
         description: "Usando análise padrão. " + (error.message || ''),

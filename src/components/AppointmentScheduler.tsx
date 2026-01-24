@@ -156,7 +156,10 @@ export function AppointmentScheduler({ patientId, analysisId, onScheduled }: App
 
       onScheduled?.();
     } catch (error) {
-      console.error("Error creating appointment:", error);
+      // Sanitized logging - no error details in production
+      if (import.meta.env.DEV) {
+        console.error("Error creating appointment:", error);
+      }
       toast({
         title: "Erro ao agendar",
         description: "Não foi possível criar o agendamento.",

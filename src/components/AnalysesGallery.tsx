@@ -17,9 +17,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Image, Trash2, Eye, User, Calendar, Syringe, Loader2 } from "lucide-react";
+import { Image as ImageIcon, Trash2, Eye, User, Calendar, Syringe, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { SecureImage } from "@/components/SecureImage";
 
 interface Analysis {
   id: string;
@@ -83,7 +84,7 @@ export function AnalysesGallery({ analyses, onRefresh }: AnalysesGalleryProps) {
     return (
       <Card className="border-border/50">
         <CardContent className="py-12 text-center">
-          <Image className="w-12 h-12 mx-auto text-muted-foreground/50 mb-4" />
+          <ImageIcon className="w-12 h-12 mx-auto text-muted-foreground/50 mb-4" />
           <p className="text-muted-foreground">Nenhuma análise realizada ainda.</p>
           <p className="text-sm text-muted-foreground mt-2">
             Inicie uma nova análise para ver os resultados aqui.
@@ -100,17 +101,16 @@ export function AnalysesGallery({ analyses, onRefresh }: AnalysesGalleryProps) {
           <Card key={analysis.id} className="border-border/50 overflow-hidden hover:border-primary/30 transition-colors">
             {/* Photo Preview */}
             <div className="aspect-video bg-muted/30 relative">
-              {analysis.resting_photo_url ? (
-                <img
-                  src={analysis.resting_photo_url}
-                  alt="Foto de repouso"
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center">
-                  <Image className="w-10 h-10 text-muted-foreground/30" />
-                </div>
-              )}
+              <SecureImage
+                src={analysis.resting_photo_url}
+                alt="Foto de repouso"
+                className="w-full h-full"
+                fallback={
+                  <div className="w-full h-full flex items-center justify-center bg-muted/30">
+                    <ImageIcon className="w-10 h-10 text-muted-foreground/30" />
+                  </div>
+                }
+              />
               <div className="absolute top-2 right-2 flex gap-1">
                 <Button
                   variant="secondary"
@@ -176,17 +176,16 @@ export function AnalysesGallery({ analyses, onRefresh }: AnalysesGalleryProps) {
                 ].map((photo, idx) => (
                   <div key={idx} className="space-y-2">
                     <div className="aspect-square bg-muted/30 rounded-lg overflow-hidden">
-                      {photo.url ? (
-                        <img
-                          src={photo.url}
-                          alt={photo.label}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                          <Image className="w-8 h-8 text-muted-foreground/30" />
-                        </div>
-                      )}
+                      <SecureImage
+                        src={photo.url}
+                        alt={photo.label}
+                        className="w-full h-full"
+                        fallback={
+                          <div className="w-full h-full flex items-center justify-center">
+                            <ImageIcon className="w-8 h-8 text-muted-foreground/30" />
+                          </div>
+                        }
+                      />
                     </div>
                     <p className="text-xs text-center text-muted-foreground">{photo.label}</p>
                   </div>

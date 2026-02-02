@@ -15,6 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import { PatientTreatmentHistory } from "@/components/PatientTreatmentHistory";
 import { BeforeAfterComparison } from "@/components/BeforeAfterComparison";
 import { TreatmentTimeline } from "@/components/TreatmentTimeline";
+import { SecureImage } from "@/components/SecureImage";
 import {
   Dialog,
   DialogContent,
@@ -216,15 +217,12 @@ export default function PatientDetail() {
               <div className="flex items-center gap-4">
                 {/* Patient Avatar */}
                 <div className="w-14 h-14 rounded-full bg-gradient-to-br from-primary/20 to-accent/20 flex items-center justify-center overflow-hidden border-2 border-primary/20">
-                  {lastAnalysis?.resting_photo_url ? (
-                    <img 
-                      src={lastAnalysis.resting_photo_url} 
-                      alt={patient.name}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <User className="w-6 h-6 text-primary" />
-                  )}
+                  <SecureImage
+                    src={lastAnalysis?.resting_photo_url}
+                    alt={patient.name}
+                    className="w-full h-full"
+                    fallback={<User className="w-6 h-6 text-primary" />}
+                  />
                 </div>
                 <div>
                   <h1 className="text-2xl font-bold text-foreground">{patient.name}</h1>
@@ -354,10 +352,10 @@ export default function PatientDetail() {
                               className="relative aspect-square cursor-pointer group"
                               onClick={() => setSelectedPhoto(photo.url)}
                             >
-                              <img 
+                              <SecureImage 
                                 src={photo.url} 
                                 alt={photo.label}
-                                className="w-full h-full object-cover rounded-lg border border-border group-hover:border-primary transition-colors"
+                                className="w-full h-full rounded-lg border border-border group-hover:border-primary transition-colors"
                               />
                               <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-1 rounded-b-lg">
                                 <p className="text-[10px] text-white text-center truncate">{photo.label}</p>
@@ -627,10 +625,11 @@ export default function PatientDetail() {
           </DialogHeader>
           {selectedPhoto && (
             <div className="p-4">
-              <img 
+              <SecureImage 
                 src={selectedPhoto} 
                 alt="Foto ampliada"
-                className="w-full h-auto max-h-[70vh] object-contain rounded-lg"
+                className="w-full h-auto max-h-[70vh] rounded-lg"
+                objectFit="contain"
               />
             </div>
           )}

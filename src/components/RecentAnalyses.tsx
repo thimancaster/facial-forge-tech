@@ -1,7 +1,8 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
-import { Clock, User, Syringe, ArrowRight, Image } from "lucide-react";
+import { Clock, User, Syringe, ArrowRight, Image as ImageIcon } from "lucide-react";
+import { SecureImage } from "@/components/SecureImage";
 
 interface Analysis {
   id: string;
@@ -63,17 +64,16 @@ export function RecentAnalyses({ analyses }: RecentAnalysesProps) {
           >
             {/* Thumbnail */}
             <div className="w-12 h-12 rounded-lg bg-muted/50 overflow-hidden flex-shrink-0">
-              {analysis.resting_photo_url ? (
-                <img
-                  src={analysis.resting_photo_url}
-                  alt="Análise"
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center">
-                  <Image className="w-5 h-5 text-muted-foreground/50" />
-                </div>
-              )}
+              <SecureImage
+                src={analysis.resting_photo_url}
+                alt="Análise"
+                className="w-full h-full"
+                fallback={
+                  <div className="w-full h-full flex items-center justify-center">
+                    <ImageIcon className="w-5 h-5 text-muted-foreground/50" />
+                  </div>
+                }
+              />
             </div>
 
             {/* Info */}

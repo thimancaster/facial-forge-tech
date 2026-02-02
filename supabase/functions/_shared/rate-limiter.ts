@@ -1,5 +1,3 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-
 /**
  * Server-side rate limiter using Supabase as storage
  * Implements sliding window counter algorithm
@@ -26,18 +24,20 @@ interface RateLimitRecord {
   window_end: string;
 }
 
+// Use any for Supabase client to avoid type issues in Deno edge functions
+type SupabaseClient = any;
+
 /**
  * Check and record rate limit for a user
  * Uses a simple database table for persistent rate limiting
  */
 export async function checkRateLimit(
-  supabaseClient: ReturnType<typeof createClient>,
+  supabaseClient: SupabaseClient,
   userId: string,
   config: RateLimitConfig
 ): Promise<RateLimitResult> {
   const functionKey = config.keyPrefix;
   const now = Date.now();
-  const windowStart = new Date(now - config.windowMs);
   const windowEnd = new Date(now + config.windowMs);
 
   try {
@@ -82,9 +82,7 @@ export async function checkRateLimit(
       // Increment the counter
       const { error: updateError } = await supabaseClient
         .from('rate_limits')
-        .update({ 
-          request_count: record.request_count + 1,
-        })
+        .update({ request_count: record.request_count + 1 })
         .eq('user_id', userId)
         .eq('function_key', functionKey)
         .eq('window_start', record.window_start);

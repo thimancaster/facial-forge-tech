@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { checkRateLimit, rateLimitHeaders, RATE_LIMIT_CONFIGS } from '../_shared/rate-limiter.ts';
 
 // ============ ZOD VALIDATION SCHEMA ============
 // Since we can't import Zod directly in Deno edge functions easily,
@@ -600,8 +601,33 @@ serve(async (req) => {
       );
     }
 
-    const userId = claimsData.claims.sub;
+    const userId = claimsData.claims.sub as string;
     // Request authenticated successfully
+
+    // ============ RATE LIMITING ============
+    const rateLimitResult = await checkRateLimit(
+      supabaseClient,
+      userId,
+      RATE_LIMIT_CONFIGS['analyze-face']
+    );
+
+    if (!rateLimitResult.allowed) {
+      return new Response(
+        JSON.stringify({ 
+          error: 'Limite de requisições excedido. Aguarde antes de tentar novamente.',
+          retryAfter: rateLimitResult.retryAfter,
+        }),
+        { 
+          status: 429, 
+          headers: { 
+            ...corsHeaders, 
+            ...rateLimitHeaders(rateLimitResult),
+            'Content-Type': 'application/json' 
+          } 
+        }
+      );
+    }
+    // ============ END RATE LIMITING ============
 
     // ============ END AUTHENTICATION ============
 

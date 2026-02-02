@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { checkRateLimit, rateLimitHeaders, RATE_LIMIT_CONFIGS } from '../_shared/rate-limiter.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -182,6 +183,33 @@ serve(async (req) => {
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+
+    const userId = claimsData.claims.sub as string;
+
+    // ============ RATE LIMITING ============
+    const rateLimitResult = await checkRateLimit(
+      supabase,
+      userId,
+      RATE_LIMIT_CONFIGS['suggest-dosage']
+    );
+
+    if (!rateLimitResult.allowed) {
+      return new Response(
+        JSON.stringify({ 
+          error: 'Limite de requisições excedido. Aguarde antes de tentar novamente.',
+          retryAfter: rateLimitResult.retryAfter,
+        }),
+        { 
+          status: 429, 
+          headers: { 
+            ...corsHeaders, 
+            ...rateLimitHeaders(rateLimitResult),
+            'Content-Type': 'application/json' 
+          } 
+        }
+      );
+    }
+    // ============ END RATE LIMITING ============
 
     // Fetch patient's analysis history
     const { data: analyses, error: analysesError } = await supabase

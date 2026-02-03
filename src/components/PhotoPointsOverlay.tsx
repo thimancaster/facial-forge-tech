@@ -2,6 +2,8 @@ import { useState, useRef, useCallback, useEffect, WheelEvent } from "react";
 import { ZoomIn, ZoomOut, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { InjectionPoint } from "./Face3DViewer";
+import { MUSCLE_LABELS } from "@/lib/muscleUtils";
+import { ZONE_BOUNDARIES, FACIAL_LANDMARKS } from "@/lib/coordinateMapping";
 
 interface PhotoPointsOverlayProps {
   photoUrl: string;
@@ -16,24 +18,6 @@ function getConfidenceColor(confidence: number): string {
   if (confidence >= 0.5) return "#F59E0B"; // Yellow
   return "#EF4444"; // Red
 }
-
-// Get muscle display label
-const MUSCLE_LABELS: Record<string, string> = {
-  procerus: "Prócero",
-  corrugator_left: "Corrugador Esq.",
-  corrugator_right: "Corrugador Dir.",
-  frontalis: "Frontal",
-  frontalis_left: "Frontal Esq.",
-  frontalis_right: "Frontal Dir.",
-  frontalis_center: "Frontal Centro",
-  orbicularis_oculi_left: "Orbicular Olho Esq.",
-  orbicularis_oculi_right: "Orbicular Olho Dir.",
-  nasalis: "Nasal",
-  levator_labii: "Levantador Lábio",
-  orbicularis_oris: "Orbicular Boca",
-  mentalis: "Mentual",
-  masseter: "Masseter",
-};
 
 export function PhotoPointsOverlay({
   photoUrl,

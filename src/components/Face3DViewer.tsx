@@ -117,146 +117,19 @@ const DANGER_ZONES = [
   }
 ];
 
-// ============ GLB CALIBRATION - PRECISION SURFACE ALIGNMENT ============
-// Calibration system designed for 100% reliable alignment with face-anatomy.glb
-// Uses anatomical landmarks as reference points for each facial zone
-// MASTER REFERENCE: GLB model at scale 2.5 - all coordinates calibrated to surface mesh
+// ============ GLB CALIBRATION - USING UNIFIED COORDINATE SYSTEM ============
+// Import unified coordinate mapping for consistent alignment between 2D and 3D views
+import { 
+  percentTo3D, 
+  threeDToPercent as coordThreeDToPercent, 
+  detectMuscleFrom3D,
+  getZone3DAnchors,
+  getGLBModelParams,
+} from "@/lib/coordinateMapping";
 
-// GLB Model reference measurements (based on face-anatomy.glb at scale 2.5)
-// These values are derived from the actual mesh geometry
-const GLB_MODEL_BOUNDS = {
-  // Model scale factor applied to GLB
-  modelScale: 2.5,
-  // Facial width at widest point (zygomatic arches) in 3D units
-  facialWidth: 2.4,
-  // Facial height from chin tip to hairline in 3D units  
-  facialHeight: 3.2,
-  // Vertical center of face (approximately at nose bridge)
-  centerY: 0.2,
-  // Front surface Z at center of face
-  centerZ: 1.8,
-};
-
-// ============ ANATOMICAL ANCHORS - PRECISION CALIBRATED TO GLB MESH ============
-// Each zone defines a bounding volume mapped to the GLB surface
-// refPoint: The CENTER of the zone on the 3D surface
-// width/height: Bounding box dimensions for coordinate mapping
-// curvatureX/Y: Surface curvature factors for accurate depth positioning
-//
-// COORDINATE SYSTEM:
-// - AI outputs: x,y as 0-100 percentage (50,50 = center of face)
-// - 3D output: x = left(-) to right(+), y = down(-) to up(+), z = back(-) to front(+)
-//
-// CALIBRATION METHODOLOGY (Consenso Brasileiro 2024 / Carruthers / Cotofana):
-// - Glabella center at nasion level (between eyebrows)
-// - Procerus: x=50%, y=35-38%
-// - Corrugators: 10-15mm lateral to procerus
-// - Frontalis: 2cm+ above supraorbital rim
-// - Periorbital: 1cm lateral to orbital rim
-
-const ANATOMICAL_ANCHORS: Record<AnatomicalZone, {
-  // Reference position for the CENTER of this zone on GLB surface
-  refPoint: { x: number; y: number; z: number };
-  // Bounding box size for mapping percentage coordinates
-  width: number;
-  height: number;
-  // Surface curvature parameters (higher = more curve-back at edges)
-  curvatureX: number;
-  curvatureY: number;
-  // Z-offset for surface positioning (positive = forward)
-  surfaceOffset: number;
-}> = {
-  // GLABELLA: Between eyebrows, centered at nasion
-  // AI coords: x~50, y~35-40 → 3D center at forehead/brow junction
-  // GLB surface Z ≈ 1.75 at center glabella
-  glabella: {
-    refPoint: { x: 0, y: 0.72, z: 1.78 },
-    width: 0.55,
-    height: 0.40,
-    curvatureX: 0.08,
-    curvatureY: 0.04,
-    surfaceOffset: 0.03,
-  },
-  
-  // FRONTALIS: Upper forehead muscle
-  // AI coords: x~25-75, y~10-25 → 3D upper forehead
-  // GLB surface curves back significantly at top
-  frontalis: {
-    refPoint: { x: 0, y: 1.35, z: 1.35 },
-    width: 1.40,
-    height: 0.70,
-    curvatureX: 0.25,
-    curvatureY: 0.18,
-    surfaceOffset: 0.04,
-  },
-  
-  // PERIORBITAL: Lateral to eyes (crow's feet zone)
-  // AI coords: x~20-30 or 70-80, y~35-50 → 3D lateral orbital area
-  // refPoint.x is POSITIVE (right side) - left side is mirrored in code
-  periorbital: {
-    refPoint: { x: 0.85, y: 0.48, z: 1.38 },
-    width: 0.55,
-    height: 0.50,
-    curvatureX: 0.35,
-    curvatureY: 0.08,
-    surfaceOffset: 0.03,
-  },
-  
-  // NASAL: Bunny lines area, on lateral nasal walls
-  // AI coords: x~40-60, y~42-50 → 3D nose dorsum/sides
-  // Most anterior point of face (highest Z)
-  nasal: {
-    refPoint: { x: 0, y: 0.15, z: 1.95 },
-    width: 0.35,
-    height: 0.50,
-    curvatureX: 0.12,
-    curvatureY: 0.10,
-    surfaceOffset: 0.02,
-  },
-  
-  // PERIORAL: Around mouth area
-  // AI coords: x~35-65, y~58-72 → 3D perioral region
-  perioral: {
-    refPoint: { x: 0, y: -0.42, z: 1.72 },
-    width: 0.75,
-    height: 0.45,
-    curvatureX: 0.14,
-    curvatureY: 0.06,
-    surfaceOffset: 0.03,
-  },
-  
-  // MENTALIS: Chin muscle
-  // AI coords: x~40-60, y~78-92 → 3D chin prominence
-  mentalis: {
-    refPoint: { x: 0, y: -0.88, z: 1.55 },
-    width: 0.50,
-    height: 0.35,
-    curvatureX: 0.18,
-    curvatureY: 0.22,
-    surfaceOffset: 0.03,
-  },
-  
-  // MASSETER: Side of jaw (bilateral)
-  // AI coords: x~10-25 or 75-90, y~55-75 → 3D lateral jaw
-  masseter: {
-    refPoint: { x: 1.02, y: -0.30, z: 0.85 },
-    width: 0.60,
-    height: 0.70,
-    curvatureX: 0.40,
-    curvatureY: 0.10,
-    surfaceOffset: 0.04,
-  },
-  
-  // UNKNOWN: Fallback - center face
-  unknown: {
-    refPoint: { x: 0, y: 0.30, z: 1.65 },
-    width: 1.0,
-    height: 1.0,
-    curvatureX: 0.20,
-    curvatureY: 0.15,
-    surfaceOffset: 0.03,
-  }
-};
+// Re-export for backward compatibility
+const GLB_MODEL_BOUNDS = getGLBModelParams().bounds;
+const ANATOMICAL_ANCHORS = getZone3DAnchors();
 
 // Zone-specific configuration for procedural model (fallback when GLB fails)
 const ZONE_CONFIG_PROCEDURAL: Record<AnatomicalZone, { baseZ: number; curveFactor: number; yOffset: number }> = {
@@ -299,9 +172,9 @@ function percentTo3DForGLB(x: number, y: number, zone?: AnatomicalZone): [number
   const normalizedX = (x - 50) / 100;
   const normalizedY = (50 - y) / 100;
   
-  // Scale normalized offset by zone dimensions
-  const offsetX = normalizedX * anchor.width;
-  const offsetY = normalizedY * anchor.height;
+  // Scale normalized offset by zone dimensions (use width3D/height3D from new structure)
+  const offsetX = normalizedX * anchor.width3D;
+  const offsetY = normalizedY * anchor.height3D;
   
   // Calculate final X position
   // For bilateral zones (periorbital, masseter), mirror for left side
@@ -309,30 +182,30 @@ function percentTo3DForGLB(x: number, y: number, zone?: AnatomicalZone): [number
   if (effectiveZone === 'periorbital' || effectiveZone === 'masseter') {
     if (x < 50) {
       // Left side: mirror the reference point to negative X
-      finalX = -anchor.refPoint.x + offsetX;
+      finalX = -anchor.ref3D.x + offsetX;
     } else {
       // Right side: use positive reference point
-      finalX = anchor.refPoint.x + offsetX;
+      finalX = anchor.ref3D.x + offsetX;
     }
   } else {
     // Central zones: simple offset from center
-    finalX = anchor.refPoint.x + offsetX;
+    finalX = anchor.ref3D.x + offsetX;
   }
   
   // Calculate final Y position
-  const finalY = anchor.refPoint.y + offsetY;
+  const finalY = anchor.ref3D.y + offsetY;
   
   // Calculate Z with anatomically-accurate surface curvature
   // The face curves BACK (Z decreases) as we move away from center
   const lateralDistance = Math.abs(finalX);
-  const verticalDistance = Math.abs(finalY - GLB_MODEL_BOUNDS.centerY);
+  const verticalDistance = Math.abs(finalY - 0.2); // centerY = 0.2
   
   // Apply curvature: quadratic falloff for lateral, 1.5 power for vertical
   const lateralCurve = Math.pow(lateralDistance, 2) * anchor.curvatureX;
   const verticalCurve = Math.pow(verticalDistance, 1.5) * anchor.curvatureY;
   
   // Calculate surface Z with curvature applied
-  let finalZ = anchor.refPoint.z - lateralCurve - verticalCurve;
+  let finalZ = anchor.ref3D.z - lateralCurve - verticalCurve;
   
   // Add surface offset to ensure point renders ON surface (not inside mesh)
   finalZ += anchor.surfaceOffset;
@@ -867,20 +740,20 @@ function DebugAnatomicalAnchors({ visible }: { visible: boolean }) {
   return (
     <group>
       {(Object.entries(ANATOMICAL_ANCHORS) as [AnatomicalZone, typeof ANATOMICAL_ANCHORS[AnatomicalZone]][]).map(([zone, anchor]) => {
-        const { refPoint, width, height } = anchor;
+        const { ref3D, width3D, height3D } = anchor;
         const color = zoneColors[zone];
         
         // Calculate bounding box corners
-        const halfW = width / 2;
-        const halfH = height / 2;
+        const halfW = width3D / 2;
+        const halfH = height3D / 2;
         
         // Box vertices for wireframe
         const boxPoints: [number, number, number][] = [
-          [refPoint.x - halfW, refPoint.y - halfH, refPoint.z],
-          [refPoint.x + halfW, refPoint.y - halfH, refPoint.z],
-          [refPoint.x + halfW, refPoint.y + halfH, refPoint.z],
-          [refPoint.x - halfW, refPoint.y + halfH, refPoint.z],
-          [refPoint.x - halfW, refPoint.y - halfH, refPoint.z], // Close loop
+          [ref3D.x - halfW, ref3D.y - halfH, ref3D.z],
+          [ref3D.x + halfW, ref3D.y - halfH, ref3D.z],
+          [ref3D.x + halfW, ref3D.y + halfH, ref3D.z],
+          [ref3D.x - halfW, ref3D.y + halfH, ref3D.z],
+          [ref3D.x - halfW, ref3D.y - halfH, ref3D.z], // Close loop
         ];
 
         return (
@@ -896,7 +769,7 @@ function DebugAnatomicalAnchors({ visible }: { visible: boolean }) {
             />
             
             {/* Central reference anchor point */}
-            <mesh position={[refPoint.x, refPoint.y, refPoint.z]}>
+            <mesh position={[ref3D.x, ref3D.y, ref3D.z]}>
               <sphereGeometry args={[0.04, 16, 16]} />
               <meshBasicMaterial color={color} />
             </mesh>
@@ -905,8 +778,8 @@ function DebugAnatomicalAnchors({ visible }: { visible: boolean }) {
             {/* X axis (red) */}
             <Line
               points={[
-                [refPoint.x, refPoint.y, refPoint.z],
-                [refPoint.x + 0.15, refPoint.y, refPoint.z],
+                [ref3D.x, ref3D.y, ref3D.z],
+                [ref3D.x + 0.15, ref3D.y, ref3D.z],
               ]}
               color="#EF4444"
               lineWidth={3}
@@ -914,8 +787,8 @@ function DebugAnatomicalAnchors({ visible }: { visible: boolean }) {
             {/* Y axis (green) */}
             <Line
               points={[
-                [refPoint.x, refPoint.y, refPoint.z],
-                [refPoint.x, refPoint.y + 0.15, refPoint.z],
+                [ref3D.x, ref3D.y, ref3D.z],
+                [ref3D.x, ref3D.y + 0.15, ref3D.z],
               ]}
               color="#22C55E"
               lineWidth={3}
@@ -923,15 +796,15 @@ function DebugAnatomicalAnchors({ visible }: { visible: boolean }) {
             {/* Z axis (blue) */}
             <Line
               points={[
-                [refPoint.x, refPoint.y, refPoint.z],
-                [refPoint.x, refPoint.y, refPoint.z + 0.15],
+                [ref3D.x, ref3D.y, ref3D.z],
+                [ref3D.x, ref3D.y, ref3D.z + 0.15],
               ]}
               color="#3B82F6"
               lineWidth={3}
             />
             
             {/* Zone label */}
-            <Billboard position={[refPoint.x, refPoint.y + halfH + 0.1, refPoint.z]} follow>
+            <Billboard position={[ref3D.x, ref3D.y + halfH + 0.1, ref3D.z]} follow>
               <Text
                 fontSize={0.08}
                 color={color}
@@ -945,7 +818,7 @@ function DebugAnatomicalAnchors({ visible }: { visible: boolean }) {
             </Billboard>
             
             {/* Coordinates label */}
-            <Billboard position={[refPoint.x, refPoint.y - halfH - 0.08, refPoint.z]} follow>
+            <Billboard position={[ref3D.x, ref3D.y - halfH - 0.08, ref3D.z]} follow>
               <Text
                 fontSize={0.05}
                 color="#9CA3AF"
@@ -954,7 +827,7 @@ function DebugAnatomicalAnchors({ visible }: { visible: boolean }) {
                 outlineWidth={0.005}
                 outlineColor="#000000"
               >
-                {`(${refPoint.x.toFixed(2)}, ${refPoint.y.toFixed(2)}, ${refPoint.z.toFixed(2)})`}
+                {`(${ref3D.x.toFixed(2)}, ${ref3D.y.toFixed(2)}, ${ref3D.z.toFixed(2)})`}
               </Text>
             </Billboard>
           </group>

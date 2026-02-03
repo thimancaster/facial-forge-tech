@@ -146,76 +146,38 @@ const ZONE_CONFIG_PROCEDURAL: Record<AnatomicalZone, { baseZ: number; curveFacto
 /**
  * PRECISION 3D COORDINATE MAPPING FOR GLB MODEL
  * 
- * Converts 2D percentage coordinates (from AI analysis) to precise 3D positions
- * that align exactly with the GLB model's surface mesh.
- * 
- * ALGORITHM:
- * 1. Determine anatomical zone from muscle name
- * 2. Convert percentage coords to normalized offset from zone center (-0.5 to +0.5)
- * 3. Apply zone-specific dimensions to get 3D offset
- * 4. Handle bilateral zones (periorbital, masseter) by mirroring for left side
- * 5. Apply surface curvature to calculate Z depth
- * 6. Add surface offset to ensure rendering ON surface (not inside mesh)
+ * Wrapper that uses the unified coordinate mapping system for GLB positioning.
+ * All calibration logic is centralized in coordinateMapping.ts
  * 
  * @param x - X coordinate as percentage (0-100, center at 50)
  * @param y - Y coordinate as percentage (0-100, top is 0)
  * @param zone - Anatomical zone for zone-specific mapping parameters
+ * @param muscle - Muscle name (passed to percentTo3D for zone detection)
  * @returns [x, y, z] 3D coordinates on GLB surface
  */
-function percentTo3DForGLB(x: number, y: number, zone?: AnatomicalZone): [number, number, number] {
-  const effectiveZone = zone || 'unknown';
-  const anchor = ANATOMICAL_ANCHORS[effectiveZone];
-  
-  // Convert percentage to normalized offset from zone center
-  // x: 0-100 → -0.5 to +0.5 (50 = center = 0)
-  // y: 0-100 → +0.5 to -0.5 (0 = top = +0.5, 100 = bottom = -0.5)
-  const normalizedX = (x - 50) / 100;
-  const normalizedY = (50 - y) / 100;
-  
-  // Scale normalized offset by zone dimensions (use width3D/height3D from new structure)
-  const offsetX = normalizedX * anchor.width3D;
-  const offsetY = normalizedY * anchor.height3D;
-  
-  // Calculate final X position
-  // For bilateral zones (periorbital, masseter), mirror for left side
-  let finalX: number;
-  if (effectiveZone === 'periorbital' || effectiveZone === 'masseter') {
-    if (x < 50) {
-      // Left side: mirror the reference point to negative X
-      finalX = -anchor.ref3D.x + offsetX;
-    } else {
-      // Right side: use positive reference point
-      finalX = anchor.ref3D.x + offsetX;
-    }
-  } else {
-    // Central zones: simple offset from center
-    finalX = anchor.ref3D.x + offsetX;
-  }
-  
-  // Calculate final Y position
-  const finalY = anchor.ref3D.y + offsetY;
-  
-  // Calculate Z with anatomically-accurate surface curvature
-  // The face curves BACK (Z decreases) as we move away from center
-  const lateralDistance = Math.abs(finalX);
-  const verticalDistance = Math.abs(finalY - 0.2); // centerY = 0.2
-  
-  // Apply curvature: quadratic falloff for lateral, 1.5 power for vertical
-  const lateralCurve = Math.pow(lateralDistance, 2) * anchor.curvatureX;
-  const verticalCurve = Math.pow(verticalDistance, 1.5) * anchor.curvatureY;
-  
-  // Calculate surface Z with curvature applied
-  let finalZ = anchor.ref3D.z - lateralCurve - verticalCurve;
-  
-  // Add surface offset to ensure point renders ON surface (not inside mesh)
-  finalZ += anchor.surfaceOffset;
-  
-  // Clamp Z to reasonable bounds for GLB model
-  // Min 0.5 prevents points going inside head
-  // Max 2.1 prevents points floating in front of nose tip
-  finalZ = Math.max(0.5, Math.min(2.1, finalZ));
-  
-  return [finalX, finalY, finalZ];
+function percentTo3DForGLB(x: number, y: number, zone?: AnatomicalZone, muscle?: string): [number, number, number] {
+  // Use the unified coordinate mapping from coordinateMapping.ts
+  // This ensures consistency between 2D photo overlay and 3D viewer
+  const muscleForMapping = muscle || (zone ? zoneToDefaultMuscle(zone) : 'procerus');
+  return percentTo3D(x, y, muscleForMapping);
+}
+
+/**
+ * Helper to get a default muscle name from a zone
+ * Used when muscle is not directly available
+ */
+function zoneToDefaultMuscle(zone: AnatomicalZone): string {
+  const zoneToMuscle: Record<AnatomicalZone, string> = {
+    glabella: 'procerus',
+    frontalis: 'frontalis',
+    periorbital: 'orbicularis_oculi_right',
+    nasal: 'nasalis',
+    perioral: 'orbicularis_oris',
+    mentalis: 'mentalis',
+    masseter: 'masseter',
+    unknown: 'procerus',
+  };
+  return zoneToMuscle[zone];
 }
 
 // Convert 2D percentage coordinates to 3D positions for procedural model

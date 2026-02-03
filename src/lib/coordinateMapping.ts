@@ -186,10 +186,22 @@ const GLB_MODEL_PARAMS = {
 
 // ============ ZONE-SPECIFIC 3D ANCHORS ============
 // Pontos de referência 3D para cada zona anatômica
-// Calibrados ao modelo GLB em escala 2.5
+// RECALIBRADOS para o modelo GLB em escala 2.5
+// 
+// METODOLOGIA DE CALIBRAÇÃO:
+// 1. Cada zona foi posicionada visualmente sobre o modelo GLB
+// 2. ref3D aponta para o CENTRO da zona anatômica
+// 3. width3D/height3D definem a extensão da zona
+// 4. curvatureX/Y compensam a curvatura da superfície facial
+// 5. surfaceOffset garante que pontos fiquem NA superfície (não dentro)
+//
+// COORDENADAS GLB (escala 2.5):
+// - X: -1.2 (esquerda) a +1.2 (direita), 0 = centro
+// - Y: -1.0 (queixo) a +1.6 (testa), 0.2 = nível do nariz
+// - Z: 0.5 (orelhas) a 2.0 (ponta do nariz), maior = mais frontal
 
 const ZONE_3D_ANCHORS: Record<AnatomicalZone, {
-  // Posição de referência no modelo 3D
+  // Posição de referência no modelo 3D (centro da zona)
   ref3D: { x: number; y: number; z: number };
   // Dimensões da zona no espaço 3D
   width3D: number;
@@ -200,84 +212,107 @@ const ZONE_3D_ANCHORS: Record<AnatomicalZone, {
   // Offset para garantir que pontos fiquem NA superfície
   surfaceOffset: number;
 }> = {
-  // GLABELA: Entre as sobrancelhas
+  // ═══════════════════════════════════════════════════════
+  // GLABELA: Complexo glabelar (procerus + corrugadores)
+  // Entre as sobrancelhas, região mais proeminente do terço superior
+  // ═══════════════════════════════════════════════════════
   glabella: {
-    ref3D: { x: 0, y: 0.72, z: 1.78 },
-    width3D: 0.72,
-    height3D: 0.50,
-    curvatureX: 0.08,
-    curvatureY: 0.04,
-    surfaceOffset: 0.03,
+    ref3D: { x: 0, y: 0.68, z: 1.72 },  // Ajustado: mais alto e mais frontal
+    width3D: 0.80,    // Largura total da glabela
+    height3D: 0.40,   // Altura vertical
+    curvatureX: 0.06, // Curvatura lateral suave (região central)
+    curvatureY: 0.03, // Curvatura vertical mínima
+    surfaceOffset: 0.04,
   },
   
-  // FRONTAL: Testa superior
+  // ═══════════════════════════════════════════════════════
+  // FRONTAL: Testa superior (músculo frontal)
+  // REGRA CLÍNICA: mínimo 2cm acima da sobrancelha
+  // ═══════════════════════════════════════════════════════
   frontalis: {
-    ref3D: { x: 0, y: 1.35, z: 1.35 },
-    width3D: 1.40,
-    height3D: 0.70,
-    curvatureX: 0.25,
-    curvatureY: 0.18,
-    surfaceOffset: 0.04,
+    ref3D: { x: 0, y: 1.28, z: 1.25 },  // Ajustado: centro da testa
+    width3D: 1.60,    // Largura ampla da testa
+    height3D: 0.65,   // Altura da zona frontal
+    curvatureX: 0.22, // Curvatura lateral significativa
+    curvatureY: 0.14, // Curvatura vertical (testa recua para cima)
+    surfaceOffset: 0.05,
   },
   
+  // ═══════════════════════════════════════════════════════
   // PERIORBITAL: Lateral aos olhos (pés de galinha)
+  // Referência é para o LADO DIREITO, espelhado para esquerdo
+  // ═══════════════════════════════════════════════════════
   periorbital: {
-    ref3D: { x: 0.85, y: 0.48, z: 1.38 },
-    width3D: 0.55,
-    height3D: 0.50,
-    curvatureX: 0.35,
-    curvatureY: 0.08,
-    surfaceOffset: 0.03,
-  },
-  
-  // NASAL: Bunny lines
-  nasal: {
-    ref3D: { x: 0, y: 0.15, z: 1.95 },
-    width3D: 0.35,
-    height3D: 0.50,
-    curvatureX: 0.12,
-    curvatureY: 0.10,
-    surfaceOffset: 0.02,
-  },
-  
-  // PERIORAL: Ao redor da boca
-  perioral: {
-    ref3D: { x: 0, y: -0.42, z: 1.72 },
-    width3D: 0.75,
-    height3D: 0.45,
-    curvatureX: 0.14,
-    curvatureY: 0.06,
-    surfaceOffset: 0.03,
-  },
-  
-  // MENTALIS: Queixo
-  mentalis: {
-    ref3D: { x: 0, y: -0.88, z: 1.55 },
-    width3D: 0.50,
-    height3D: 0.35,
-    curvatureX: 0.18,
-    curvatureY: 0.22,
-    surfaceOffset: 0.03,
-  },
-  
-  // MASSETER: Lateral da mandíbula
-  masseter: {
-    ref3D: { x: 1.02, y: -0.30, z: 0.85 },
-    width3D: 0.60,
-    height3D: 0.70,
-    curvatureX: 0.40,
-    curvatureY: 0.10,
+    ref3D: { x: 0.82, y: 0.42, z: 1.32 },  // Ajustado: canto externo do olho
+    width3D: 0.50,    // Largura da zona periorbital
+    height3D: 0.45,   // Altura vertical
+    curvatureX: 0.32, // Curvatura lateral forte (região temporal)
+    curvatureY: 0.07, // Curvatura vertical suave
     surfaceOffset: 0.04,
   },
   
-  // FALLBACK
+  // ═══════════════════════════════════════════════════════
+  // NASAL: Bunny lines (linhas do nariz)
+  // Parte superior do nariz, logo abaixo da glabela
+  // ═══════════════════════════════════════════════════════
+  nasal: {
+    ref3D: { x: 0, y: 0.18, z: 1.88 },  // Ajustado: dorso nasal
+    width3D: 0.32,    // Largura estreita do nariz
+    height3D: 0.42,   // Altura vertical do nariz
+    curvatureX: 0.10, // Curvatura lateral moderada
+    curvatureY: 0.08, // Curvatura vertical (nariz projeta-se)
+    surfaceOffset: 0.03,
+  },
+  
+  // ═══════════════════════════════════════════════════════
+  // PERIORAL: Ao redor da boca
+  // Inclui orbicular da boca e músculos adjacentes
+  // ═══════════════════════════════════════════════════════
+  perioral: {
+    ref3D: { x: 0, y: -0.48, z: 1.68 },  // Ajustado: centro da boca
+    width3D: 0.72,    // Largura da região perioral
+    height3D: 0.40,   // Altura vertical
+    curvatureX: 0.12, // Curvatura lateral moderada
+    curvatureY: 0.05, // Curvatura vertical suave
+    surfaceOffset: 0.04,
+  },
+  
+  // ═══════════════════════════════════════════════════════
+  // MENTALIS: Queixo (músculo mentual)
+  // Parte inferior da face, protuberância do queixo
+  // ═══════════════════════════════════════════════════════
+  mentalis: {
+    ref3D: { x: 0, y: -0.85, z: 1.48 },  // Ajustado: centro do queixo
+    width3D: 0.45,    // Largura do queixo
+    height3D: 0.32,   // Altura vertical
+    curvatureX: 0.16, // Curvatura lateral (queixo arredondado)
+    curvatureY: 0.20, // Curvatura vertical forte (queixo projeta-se)
+    surfaceOffset: 0.04,
+  },
+  
+  // ═══════════════════════════════════════════════════════
+  // MASSETER: Lateral da mandíbula
+  // Referência é para o LADO DIREITO, espelhado para esquerdo
+  // ═══════════════════════════════════════════════════════
+  masseter: {
+    ref3D: { x: 0.98, y: -0.28, z: 0.78 },  // Ajustado: ângulo mandibular
+    width3D: 0.55,    // Largura do masseter
+    height3D: 0.65,   // Altura vertical
+    curvatureX: 0.38, // Curvatura lateral forte (lateral da face)
+    curvatureY: 0.08, // Curvatura vertical suave
+    surfaceOffset: 0.05,
+  },
+  
+  // ═══════════════════════════════════════════════════════
+  // FALLBACK: Zona desconhecida
+  // ═══════════════════════════════════════════════════════
   unknown: {
-    ref3D: { x: 0, y: 0.30, z: 1.65 },
+    ref3D: { x: 0, y: 0.25, z: 1.60 },
     width3D: 1.0,
     height3D: 1.0,
-    curvatureX: 0.20,
-    curvatureY: 0.15,
-    surfaceOffset: 0.03,
+    curvatureX: 0.18,
+    curvatureY: 0.12,
+    surfaceOffset: 0.04,
   },
 };
 
@@ -307,13 +342,18 @@ export function percentToAI(x: number, y: number): { x: number; y: number } {
 /**
  * Converte coordenadas 2D (0-100%) para posição 3D no modelo GLB
  * 
- * ALGORITMO:
+ * ALGORITMO PRECISO:
  * 1. Determina a zona anatômica a partir do músculo
- * 2. Converte porcentagem para offset normalizado do centro da zona
- * 3. Aplica dimensões da zona para obter offset 3D
+ * 2. Calcula a posição relativa do ponto dentro dos limites da zona 2D
+ * 3. Mapeia essa posição relativa para as dimensões da zona 3D
  * 4. Trata zonas bilaterais (periorbital, masseter) espelhando para lado esquerdo
- * 5. Aplica curvatura da superfície para Z
- * 6. Adiciona offset de superfície
+ * 5. Aplica curvatura da superfície para Z baseado na distância do centro
+ * 6. Adiciona offset de superfície para garantir renderização correta
+ * 
+ * @param x - Coordenada X em porcentagem (0-100, 50 = centro)
+ * @param y - Coordenada Y em porcentagem (0-100, 0 = topo, 100 = base)
+ * @param muscle - Nome do músculo para determinar a zona anatômica
+ * @returns [x, y, z] Coordenadas 3D no espaço do modelo GLB
  */
 export function percentTo3D(
   x: number, 
@@ -324,58 +364,84 @@ export function percentTo3D(
   const anchor = ZONE_3D_ANCHORS[zone];
   const bounds = ZONE_BOUNDARIES[zone];
   
-  // Calcular offset normalizado do centro da zona
-  // Mapeia a posição relativa dentro da zona
-  let normalizedX: number;
-  let normalizedY: number;
+  // Normalizar coordenadas de entrada (0-100 → 0-1)
+  const xNorm = x / 100;
+  const yNorm = y / 100;
   
-  if (zone === 'periorbital' || zone === 'masseter') {
-    // Zonas bilaterais: calcular posição relativa ao centro de cada lado
-    const isLeftSide = x < 50;
-    const sideCenter = isLeftSide ? bounds.centerX : (1 - bounds.centerX);
-    normalizedX = ((x / 100) - sideCenter) * 2;
-    normalizedY = ((y / 100) - bounds.centerY) * 2;
-  } else {
-    // Zonas centrais: calcular relativo ao centro
-    normalizedX = ((x / 100) - bounds.centerX) * 2;
-    normalizedY = ((y / 100) - bounds.centerY) * 2;
-  }
+  // Para zonas bilaterais, determinar qual lado
+  const isBilateral = zone === 'periorbital' || zone === 'masseter';
+  const isLeftSide = xNorm < 0.5;
   
-  // Limitar offsets para evitar pontos fora da zona
-  normalizedX = Math.max(-1, Math.min(1, normalizedX));
-  normalizedY = Math.max(-1, Math.min(1, normalizedY));
+  // Calcular posição relativa dentro da zona 2D (-1 a +1)
+  let relativeX: number;
+  let relativeY: number;
   
-  // Calcular posição X no modelo 3D
-  let x3D: number;
-  if (zone === 'periorbital' || zone === 'masseter') {
-    const isLeftSide = x < 50;
+  if (isBilateral) {
+    // Zonas bilaterais: calcular posição relativa ao centro do lado correto
     if (isLeftSide) {
-      // Lado esquerdo: espelhar referência para X negativo
-      x3D = -anchor.ref3D.x + (normalizedX * anchor.width3D / 2);
+      // Lado esquerdo: limites são espelhados
+      const leftCenterX = bounds.centerX;
+      const halfWidth = (bounds.xMax - bounds.xMin) / 2;
+      relativeX = (xNorm - leftCenterX) / halfWidth;
     } else {
-      // Lado direito: usar referência positiva
-      x3D = anchor.ref3D.x + (normalizedX * anchor.width3D / 2);
+      // Lado direito: limites originais
+      const rightCenterX = 1 - bounds.centerX;
+      const halfWidth = (bounds.xMax - bounds.xMin) / 2;
+      relativeX = (xNorm - rightCenterX) / halfWidth;
     }
   } else {
-    // Zonas centrais
-    x3D = anchor.ref3D.x + (normalizedX * anchor.width3D / 2);
+    // Zonas centrais: posição relativa ao centro da zona
+    const halfWidth = (bounds.xMax - bounds.xMin) / 2;
+    relativeX = (xNorm - bounds.centerX) / halfWidth;
   }
   
-  // Calcular posição Y no modelo 3D
-  // Inverter porque Y aumenta para baixo em 2D mas para cima em 3D
-  const y3D = anchor.ref3D.y - (normalizedY * anchor.height3D / 2);
+  // Y: posição relativa ao centro da zona (invertido porque Y cresce para baixo em 2D)
+  const halfHeight = (bounds.yMax - bounds.yMin) / 2;
+  relativeY = (yNorm - bounds.centerY) / halfHeight;
   
-  // Calcular Z com curvatura anatômica
+  // Limitar valores relativos para evitar pontos fora da zona
+  relativeX = Math.max(-1, Math.min(1, relativeX));
+  relativeY = Math.max(-1, Math.min(1, relativeY));
+  
+  // ═══════════════════════════════════════════════════════
+  // CONVERTER PARA COORDENADAS 3D
+  // ═══════════════════════════════════════════════════════
+  
+  // X: aplicar dimensão da zona 3D
+  let x3D: number;
+  if (isBilateral) {
+    if (isLeftSide) {
+      // Lado esquerdo: espelhar referência para X negativo
+      x3D = -anchor.ref3D.x + (relativeX * anchor.width3D / 2);
+    } else {
+      // Lado direito: usar referência positiva
+      x3D = anchor.ref3D.x + (relativeX * anchor.width3D / 2);
+    }
+  } else {
+    x3D = anchor.ref3D.x + (relativeX * anchor.width3D / 2);
+  }
+  
+  // Y: inverter porque Y cresce para cima em 3D (oposto de 2D)
+  const y3D = anchor.ref3D.y - (relativeY * anchor.height3D / 2);
+  
+  // ═══════════════════════════════════════════════════════
+  // CALCULAR Z COM CURVATURA ANATÔMICA
+  // ═══════════════════════════════════════════════════════
+  
+  // Distâncias do centro para aplicar curvatura
   const lateralDistance = Math.abs(x3D);
   const verticalDistance = Math.abs(y3D - GLB_MODEL_PARAMS.centerY);
   
-  // Aplicar curvatura: quadrática lateral, potência 1.5 vertical
+  // Curvatura lateral: quadrática (mais forte nas bordas)
   const lateralCurve = Math.pow(lateralDistance, 2) * anchor.curvatureX;
+  
+  // Curvatura vertical: potência 1.5 (moderada)
   const verticalCurve = Math.pow(verticalDistance, 1.5) * anchor.curvatureY;
   
+  // Z base menos as curvaturas
   let z3D = anchor.ref3D.z - lateralCurve - verticalCurve;
   
-  // Adicionar offset de superfície
+  // Adicionar offset de superfície para renderização correta
   z3D += anchor.surfaceOffset;
   
   // Limitar Z aos limites do modelo

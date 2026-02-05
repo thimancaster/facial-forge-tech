@@ -1,11 +1,12 @@
-import { useState, useRef, useCallback, useEffect, WheelEvent } from "react";
-import { ZoomIn, ZoomOut, RotateCcw, Eye, EyeOff, Grid3X3 } from "lucide-react";
+import { useState, useRef, useCallback, useEffect, WheelEvent, useMemo } from "react";
+import { ZoomIn, ZoomOut, RotateCcw, Grid3X3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { InjectionPoint } from "./Face3DViewer";
 import { MUSCLE_LABELS, getZoneFromMuscle, AnatomicalZone } from "@/lib/muscleUtils";
-import { ZONE_BOUNDARIES, FACIAL_LANDMARKS, validateCoordinatesForZone } from "@/lib/coordinateMapping";
+import { ZONE_BOUNDARIES, validateCoordinatesForZone } from "@/lib/coordinateMapping";
+import { useFaceLandmarksOnImage } from "@/hooks/useFaceLandmarksOnImage";
 
 interface PhotoPointsOverlayProps {
   photoUrl: string;
@@ -52,6 +53,9 @@ export function PhotoPointsOverlay({
   const [hoveredZone, setHoveredZone] = useState<AnatomicalZone | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
+
+  // Detect face box on the actual photo so points (face-relative) stay correct even with different photo proportions/background.
+  const { faceBox } = useFaceLandmarksOnImage(imageRef.current);
 
   const MIN_ZOOM = 0.5;
   const MAX_ZOOM = 3;
@@ -112,26 +116,41 @@ export function PhotoPointsOverlay({
     return { width: renderedWidth, height: renderedHeight, offsetX, offsetY };
   }, [imageDimensions, containerDimensions]);
 
-  // Convert point percentage to pixel position on the rendered image
+  // Face-relative (0-1) → image-relative (0-1)
+  const faceToImage = useCallback(
+    (xFace: number, yFace: number) => {
+      const box = faceBox ?? { x: 0, y: 0, width: 1, height: 1 };
+      return {
+        x: box.x + xFace * box.width,
+        y: box.y + yFace * box.height,
+      };
+    },
+    [faceBox]
+  );
+
+  // Convert point percentage (0-100 face-relative) to pixel position on the rendered image
   const getPointPosition = useCallback(
     (point: InjectionPoint) => {
       const { width, height, offsetX, offsetY } = getRenderedImageSize();
       if (!width || !height) return { x: 0, y: 0 };
 
-      // point.x and point.y are percentages (0-100)
-      const x = offsetX + (point.x / 100) * width;
-      const y = offsetY + (point.y / 100) * height;
+      const { x: xImg, y: yImg } = faceToImage(point.x / 100, point.y / 100);
+      const x = offsetX + xImg * width;
+      const y = offsetY + yImg * height;
 
       return { x, y };
     },
-    [getRenderedImageSize]
+    [getRenderedImageSize, faceToImage]
   );
 
-  const handleWheel = useCallback((e: WheelEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
-    setZoom((prev) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, prev + delta)));
-  }, []);
+  const handleWheel = useCallback(
+    (e: WheelEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
+      setZoom((prev) => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, prev + delta)));
+    },
+    []
+  );
 
   const handleZoomIn = () => {
     setZoom((prev) => Math.min(MAX_ZOOM, prev + 0.25));
@@ -174,40 +193,66 @@ export function PhotoPointsOverlay({
   const baseRadius = 14;
   const scaledRadius = baseRadius / zoom;
 
-  // Generate zone boundary paths for SVG
-  const getZonePath = useCallback((zone: AnatomicalZone) => {
-    const bounds = ZONE_BOUNDARIES[zone];
-    const { width, height, offsetX, offsetY } = getRenderedImageSize();
-    if (!width || !height) return null;
+  const zoneEntries = useMemo(() => {
+    return (Object.entries(ZONE_BOUNDARIES) as [
+      AnatomicalZone,
+      typeof ZONE_BOUNDARIES[AnatomicalZone]
+    ][]).filter(([zone]) => zone !== "unknown");
+  }, []);
 
-    // For bilateral zones (periorbital, masseter), render both sides
-    const isBilateral = zone === 'periorbital' || zone === 'masseter';
-    
-    if (isBilateral) {
-      // Left side
-      const leftX1 = offsetX + bounds.xMin * width;
-      const leftX2 = offsetX + bounds.xMax * width;
-      const y1 = offsetY + bounds.yMin * height;
-      const y2 = offsetY + bounds.yMax * height;
-      
-      // Right side (mirrored)
-      const rightX1 = offsetX + (1 - bounds.xMax) * width;
-      const rightX2 = offsetX + (1 - bounds.xMin) * width;
-      
-      return {
-        left: { x: leftX1, y: y1, width: leftX2 - leftX1, height: y2 - y1 },
-        right: { x: rightX1, y: y1, width: rightX2 - rightX1, height: y2 - y1 },
+  // Generate zone boundary rects for SVG (face-relative bounds mapped into image space)
+  const getZonePath = useCallback(
+    (zone: AnatomicalZone) => {
+      const bounds = ZONE_BOUNDARIES[zone];
+      const { width, height, offsetX, offsetY } = getRenderedImageSize();
+      if (!width || !height) return null;
+
+      const toPx = (xFace: number, yFace: number) => {
+        const { x, y } = faceToImage(xFace, yFace);
+        return { x: offsetX + x * width, y: offsetY + y * height };
       };
-    }
-    
-    // Central zones
-    const x = offsetX + bounds.xMin * width;
-    const y = offsetY + bounds.yMin * height;
-    const zoneWidth = (bounds.xMax - bounds.xMin) * width;
-    const zoneHeight = (bounds.yMax - bounds.yMin) * height;
-    
-    return { x, y, width: zoneWidth, height: zoneHeight };
-  }, [getRenderedImageSize]);
+
+      // For bilateral zones (periorbital, masseter), render both sides
+      const isBilateral = zone === "periorbital" || zone === "masseter";
+
+      if (isBilateral) {
+        // Left side (face coords)
+        const p1 = toPx(bounds.xMin, bounds.yMin);
+        const p2 = toPx(bounds.xMax, bounds.yMax);
+
+        // Right side mirrored in face coords
+        const rp1 = toPx(1 - bounds.xMax, bounds.yMin);
+        const rp2 = toPx(1 - bounds.xMin, bounds.yMax);
+
+        return {
+          left: {
+            x: Math.min(p1.x, p2.x),
+            y: Math.min(p1.y, p2.y),
+            width: Math.abs(p2.x - p1.x),
+            height: Math.abs(p2.y - p1.y),
+          },
+          right: {
+            x: Math.min(rp1.x, rp2.x),
+            y: Math.min(rp1.y, rp2.y),
+            width: Math.abs(rp2.x - rp1.x),
+            height: Math.abs(rp2.y - rp1.y),
+          },
+        };
+      }
+
+      // Central zones
+      const p1 = toPx(bounds.xMin, bounds.yMin);
+      const p2 = toPx(bounds.xMax, bounds.yMax);
+
+      return {
+        x: Math.min(p1.x, p2.x),
+        y: Math.min(p1.y, p2.y),
+        width: Math.abs(p2.x - p1.x),
+        height: Math.abs(p2.y - p1.y),
+      };
+    },
+    [getRenderedImageSize, faceToImage]
+  );
 
   // Check if a point is outside its expected zone
   const getPointValidation = useCallback((point: InjectionPoint) => {
@@ -309,8 +354,7 @@ export function PhotoPointsOverlay({
             style={{ overflow: "visible" }}
           >
             {/* Zone Boundary Visualization */}
-            {showZoneBoundaries && (Object.entries(ZONE_BOUNDARIES) as [AnatomicalZone, typeof ZONE_BOUNDARIES[AnatomicalZone]][]).map(([zone, bounds]) => {
-              if (zone === 'unknown') return null;
+            {showZoneBoundaries && zoneEntries.map(([zone]) => {
               const color = ZONE_COLORS[zone];
               const zonePath = getZonePath(zone);
               if (!zonePath) return null;

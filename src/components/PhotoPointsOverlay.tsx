@@ -1,15 +1,18 @@
 import { useState, useRef, useCallback, useEffect, WheelEvent } from "react";
-import { ZoomIn, ZoomOut, RotateCcw } from "lucide-react";
+import { ZoomIn, ZoomOut, RotateCcw, Eye, EyeOff, Grid3X3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { InjectionPoint } from "./Face3DViewer";
-import { MUSCLE_LABELS } from "@/lib/muscleUtils";
-import { ZONE_BOUNDARIES, FACIAL_LANDMARKS } from "@/lib/coordinateMapping";
+import { MUSCLE_LABELS, getZoneFromMuscle, AnatomicalZone } from "@/lib/muscleUtils";
+import { ZONE_BOUNDARIES, FACIAL_LANDMARKS, validateCoordinatesForZone } from "@/lib/coordinateMapping";
 
 interface PhotoPointsOverlayProps {
   photoUrl: string;
   injectionPoints: InjectionPoint[];
   onPointClick?: (point: InjectionPoint) => void;
   selectedPointId?: string | null;
+  showZoneBoundaries?: boolean;
 }
 
 // Get confidence color based on score
@@ -19,11 +22,24 @@ function getConfidenceColor(confidence: number): string {
   return "#EF4444"; // Red
 }
 
+// Zone colors for visual indicators
+const ZONE_COLORS: Record<AnatomicalZone, string> = {
+  glabella: "#F59E0B",
+  frontalis: "#EF4444",
+  periorbital: "#8B5CF6",
+  nasal: "#06B6D4",
+  perioral: "#EC4899",
+  mentalis: "#10B981",
+  masseter: "#F97316",
+  unknown: "#6B7280",
+};
+
 export function PhotoPointsOverlay({
   photoUrl,
   injectionPoints,
   onPointClick,
   selectedPointId,
+  showZoneBoundaries: initialShowZones = false,
 }: PhotoPointsOverlayProps) {
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -32,6 +48,8 @@ export function PhotoPointsOverlay({
   const [hoveredPoint, setHoveredPoint] = useState<string | null>(null);
   const [imageDimensions, setImageDimensions] = useState({ width: 0, height: 0 });
   const [containerDimensions, setContainerDimensions] = useState({ width: 0, height: 0 });
+  const [showZoneBoundaries, setShowZoneBoundaries] = useState(initialShowZones);
+  const [hoveredZone, setHoveredZone] = useState<AnatomicalZone | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
 
@@ -156,6 +174,47 @@ export function PhotoPointsOverlay({
   const baseRadius = 14;
   const scaledRadius = baseRadius / zoom;
 
+  // Generate zone boundary paths for SVG
+  const getZonePath = useCallback((zone: AnatomicalZone) => {
+    const bounds = ZONE_BOUNDARIES[zone];
+    const { width, height, offsetX, offsetY } = getRenderedImageSize();
+    if (!width || !height) return null;
+
+    // For bilateral zones (periorbital, masseter), render both sides
+    const isBilateral = zone === 'periorbital' || zone === 'masseter';
+    
+    if (isBilateral) {
+      // Left side
+      const leftX1 = offsetX + bounds.xMin * width;
+      const leftX2 = offsetX + bounds.xMax * width;
+      const y1 = offsetY + bounds.yMin * height;
+      const y2 = offsetY + bounds.yMax * height;
+      
+      // Right side (mirrored)
+      const rightX1 = offsetX + (1 - bounds.xMax) * width;
+      const rightX2 = offsetX + (1 - bounds.xMin) * width;
+      
+      return {
+        left: { x: leftX1, y: y1, width: leftX2 - leftX1, height: y2 - y1 },
+        right: { x: rightX1, y: y1, width: rightX2 - rightX1, height: y2 - y1 },
+      };
+    }
+    
+    // Central zones
+    const x = offsetX + bounds.xMin * width;
+    const y = offsetY + bounds.yMin * height;
+    const zoneWidth = (bounds.xMax - bounds.xMin) * width;
+    const zoneHeight = (bounds.yMax - bounds.yMin) * height;
+    
+    return { x, y, width: zoneWidth, height: zoneHeight };
+  }, [getRenderedImageSize]);
+
+  // Check if a point is outside its expected zone
+  const getPointValidation = useCallback((point: InjectionPoint) => {
+    const zone = getZoneFromMuscle(point.muscle);
+    return validateCoordinatesForZone(point.x, point.y, zone);
+  }, []);
+
   return (
     <div className="relative w-full h-full bg-slate-900 rounded-lg overflow-hidden">
       {/* Zoom Controls */}
@@ -190,6 +249,21 @@ export function PhotoPointsOverlay({
           >
             <RotateCcw className="h-4 w-4" />
           </Button>
+        </div>
+      </div>
+
+      {/* Zone Boundaries Toggle */}
+      <div className="absolute top-4 left-4 z-20 bg-white/90 backdrop-blur-sm rounded-lg p-3 shadow-lg border border-slate-200">
+        <div className="flex items-center gap-2">
+          <Switch
+            id="zone-boundaries"
+            checked={showZoneBoundaries}
+            onCheckedChange={setShowZoneBoundaries}
+          />
+          <Label htmlFor="zone-boundaries" className="text-xs text-slate-600 flex items-center gap-1.5">
+            <Grid3X3 className="h-3.5 w-3.5" />
+            Zonas Anatômicas
+          </Label>
         </div>
       </div>
 
@@ -229,17 +303,126 @@ export function PhotoPointsOverlay({
             onLoad={handleImageLoad}
           />
 
-          {/* SVG Overlay for Injection Points - positioned exactly over the image */}
+          {/* SVG Overlay for Zone Boundaries and Injection Points */}
           <svg
             className="absolute inset-0 w-full h-full"
             style={{ overflow: "visible" }}
           >
+            {/* Zone Boundary Visualization */}
+            {showZoneBoundaries && (Object.entries(ZONE_BOUNDARIES) as [AnatomicalZone, typeof ZONE_BOUNDARIES[AnatomicalZone]][]).map(([zone, bounds]) => {
+              if (zone === 'unknown') return null;
+              const color = ZONE_COLORS[zone];
+              const zonePath = getZonePath(zone);
+              if (!zonePath) return null;
+
+              const isBilateral = 'left' in zonePath;
+
+              if (isBilateral) {
+                const { left, right } = zonePath;
+                return (
+                  <g key={zone}>
+                    {/* Left side */}
+                    <rect
+                      x={left.x}
+                      y={left.y}
+                      width={left.width}
+                      height={left.height}
+                      fill={color}
+                      fillOpacity={hoveredZone === zone ? 0.25 : 0.12}
+                      stroke={color}
+                      strokeWidth={2 / zoom}
+                      strokeDasharray={`${6 / zoom} ${4 / zoom}`}
+                      rx={4 / zoom}
+                      style={{ pointerEvents: 'auto', cursor: 'pointer' }}
+                      onMouseEnter={() => setHoveredZone(zone)}
+                      onMouseLeave={() => setHoveredZone(null)}
+                    />
+                    {/* Right side */}
+                    <rect
+                      x={right.x}
+                      y={right.y}
+                      width={right.width}
+                      height={right.height}
+                      fill={color}
+                      fillOpacity={hoveredZone === zone ? 0.25 : 0.12}
+                      stroke={color}
+                      strokeWidth={2 / zoom}
+                      strokeDasharray={`${6 / zoom} ${4 / zoom}`}
+                      rx={4 / zoom}
+                      style={{ pointerEvents: 'auto', cursor: 'pointer' }}
+                      onMouseEnter={() => setHoveredZone(zone)}
+                      onMouseLeave={() => setHoveredZone(null)}
+                    />
+                    {/* Labels */}
+                    <text
+                      x={left.x + left.width / 2}
+                      y={left.y + 14 / zoom}
+                      textAnchor="middle"
+                      fontSize={10 / zoom}
+                      fill={color}
+                      fontWeight="bold"
+                      style={{ textShadow: '0 1px 2px rgba(0,0,0,0.8)', pointerEvents: 'none' }}
+                    >
+                      {zone.toUpperCase()} (E)
+                    </text>
+                    <text
+                      x={right.x + right.width / 2}
+                      y={right.y + 14 / zoom}
+                      textAnchor="middle"
+                      fontSize={10 / zoom}
+                      fill={color}
+                      fontWeight="bold"
+                      style={{ textShadow: '0 1px 2px rgba(0,0,0,0.8)', pointerEvents: 'none' }}
+                    >
+                      {zone.toUpperCase()} (D)
+                    </text>
+                  </g>
+                );
+              }
+
+              // Central zones
+              const { x, y, width, height } = zonePath;
+              return (
+                <g key={zone}>
+                  <rect
+                    x={x}
+                    y={y}
+                    width={width}
+                    height={height}
+                    fill={color}
+                    fillOpacity={hoveredZone === zone ? 0.25 : 0.12}
+                    stroke={color}
+                    strokeWidth={2 / zoom}
+                    strokeDasharray={`${6 / zoom} ${4 / zoom}`}
+                    rx={4 / zoom}
+                    style={{ pointerEvents: 'auto', cursor: 'pointer' }}
+                    onMouseEnter={() => setHoveredZone(zone)}
+                    onMouseLeave={() => setHoveredZone(null)}
+                  />
+                  <text
+                    x={x + width / 2}
+                    y={y + 14 / zoom}
+                    textAnchor="middle"
+                    fontSize={10 / zoom}
+                    fill={color}
+                    fontWeight="bold"
+                    style={{ textShadow: '0 1px 2px rgba(0,0,0,0.8)', pointerEvents: 'none' }}
+                  >
+                    {zone.toUpperCase()}
+                  </text>
+                </g>
+              );
+            })}
+
+            {/* Injection Points */}
             {injectionPoints.map((point) => {
               const confidence = point.confidence ?? 0.85;
               const confidenceColor = getConfidenceColor(confidence);
               const isSelected = selectedPointId === point.id;
               const isHovered = hoveredPoint === point.id;
               const muscleLabel = MUSCLE_LABELS[point.muscle] || point.muscle;
+              const zone = getZoneFromMuscle(point.muscle);
+              const validation = getPointValidation(point);
 
               // Get pixel position
               const { x, y } = getPointPosition(point);
@@ -249,6 +432,32 @@ export function PhotoPointsOverlay({
 
               return (
                 <g key={point.id}>
+                  {/* Warning indicator for out-of-zone points */}
+                  {!validation.valid && (
+                    <>
+                      <circle
+                        cx={x}
+                        cy={y}
+                        r={scaledRadius * 2.2}
+                        fill="none"
+                        stroke="#EF4444"
+                        strokeWidth={3 / zoom}
+                        strokeDasharray={`${4 / zoom} ${2 / zoom}`}
+                        className="animate-pulse"
+                      />
+                      <text
+                        x={x + scaledRadius * 2}
+                        y={y - scaledRadius * 2}
+                        fontSize={10 / zoom}
+                        fill="#EF4444"
+                        fontWeight="bold"
+                        style={{ textShadow: '0 1px 2px rgba(0,0,0,0.8)', pointerEvents: 'none' }}
+                      >
+                        ⚠️ Fora da zona
+                      </text>
+                    </>
+                  )}
+
                   {/* Diffusion halo */}
                   <circle
                     cx={x}
@@ -382,7 +591,7 @@ export function PhotoPointsOverlay({
       </div>
 
       {/* Legend */}
-      <div className="absolute bottom-4 right-4 z-20 bg-white/90 backdrop-blur-sm rounded-lg p-3 shadow-lg border border-slate-200">
+      <div className="absolute bottom-4 right-4 z-20 bg-white/90 backdrop-blur-sm rounded-lg p-3 shadow-lg border border-slate-200 max-h-[50%] overflow-y-auto">
         <h4 className="text-xs font-semibold text-slate-700 mb-2">Legenda</h4>
         <div className="space-y-1.5">
           <div className="flex items-center gap-2">
@@ -397,6 +606,32 @@ export function PhotoPointsOverlay({
             <div className="w-3 h-3 rounded-full bg-violet-500"></div>
             <span className="text-xs text-slate-600">Profundo</span>
           </div>
+          
+          {/* Zone Colors Legend (only when zones visible) */}
+          {showZoneBoundaries && (
+            <>
+              <div className="border-t border-slate-200 pt-2 mt-2">
+                <h5 className="text-xs font-semibold text-slate-700 mb-1.5">Zonas Anatômicas</h5>
+              </div>
+              {(Object.entries(ZONE_COLORS) as [AnatomicalZone, string][])
+                .filter(([zone]) => zone !== 'unknown')
+                .map(([zone, color]) => (
+                  <div 
+                    key={zone} 
+                    className="flex items-center gap-2 cursor-pointer hover:bg-slate-100 rounded px-1 -mx-1"
+                    onMouseEnter={() => setHoveredZone(zone)}
+                    onMouseLeave={() => setHoveredZone(null)}
+                  >
+                    <div 
+                      className="w-3 h-3 rounded border-2" 
+                      style={{ backgroundColor: `${color}30`, borderColor: color }}
+                    />
+                    <span className="text-xs text-slate-600 capitalize">{zone}</span>
+                  </div>
+                ))
+              }
+            </>
+          )}
         </div>
       </div>
     </div>

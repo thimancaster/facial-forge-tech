@@ -332,13 +332,13 @@ export function NewAnalysisWizard({ initialPatientId }: NewAnalysisWizardProps) 
       if (imageUrls.length === 0) {
         setAiAnalysis({
           injectionPoints: [
-            { id: "proc_1", muscle: "procerus", x: 50, y: 25, depth: "deep", dosage: Math.round(8 * conversionFactor), notes: "Ponto central do procerus" },
-            { id: "corr_l1", muscle: "corrugator_left", x: 35, y: 22, depth: "deep", dosage: Math.round(8 * conversionFactor), notes: "Corrugador medial esquerdo" },
-            { id: "corr_l2", muscle: "corrugator_left", x: 28, y: 20, depth: "superficial", dosage: Math.round(6 * conversionFactor), notes: "Corrugador lateral esquerdo" },
-            { id: "corr_r1", muscle: "corrugator_right", x: 65, y: 22, depth: "deep", dosage: Math.round(8 * conversionFactor), notes: "Corrugador medial direito" },
-            { id: "corr_r2", muscle: "corrugator_right", x: 72, y: 20, depth: "superficial", dosage: Math.round(6 * conversionFactor), notes: "Corrugador lateral direito" },
+            { id: "proc_1", muscle: "procerus", x: 50, y: 36, depth: "deep", dosage: Math.round(5 * conversionFactor), notes: "Ponto central do procerus", confidence: 0.90 },
+            { id: "corr_l1", muscle: "corrugator_left", x: 43, y: 34, depth: "deep", dosage: Math.round(4 * conversionFactor), notes: "Corrugador medial esquerdo", confidence: 0.88 },
+            { id: "corr_l2", muscle: "corrugator_left", x: 36, y: 32, depth: "superficial", dosage: Math.round(3 * conversionFactor), notes: "Corrugador lateral esquerdo", confidence: 0.85 },
+            { id: "corr_r1", muscle: "corrugator_right", x: 57, y: 34, depth: "deep", dosage: Math.round(4 * conversionFactor), notes: "Corrugador medial direito", confidence: 0.88 },
+            { id: "corr_r2", muscle: "corrugator_right", x: 64, y: 32, depth: "superficial", dosage: Math.round(3 * conversionFactor), notes: "Corrugador lateral direito", confidence: 0.85 },
           ],
-          totalDosage: { procerus: Math.round(8 * conversionFactor), corrugator: Math.round(28 * conversionFactor), total: Math.round(36 * conversionFactor) },
+          totalDosage: { procerus: Math.round(5 * conversionFactor), corrugator: Math.round(14 * conversionFactor), total: Math.round(19 * conversionFactor) },
           clinicalNotes: "Análise padrão para tratamento glabelar. Ajuste conforme massa muscular e histórico do paciente.",
           confidence: 0.7,
           safetyZones: [
@@ -394,12 +394,12 @@ export function NewAnalysisWizard({ initialPatientId }: NewAnalysisWizardProps) 
       
       setAiAnalysis({
         injectionPoints: [
-          { id: "proc_1", muscle: "procerus", x: 50, y: 25, depth: "deep", dosage: Math.round(8 * conversionFactor), notes: "Ponto central do procerus" },
-          { id: "corr_l1", muscle: "corrugator_left", x: 35, y: 22, depth: "deep", dosage: Math.round(8 * conversionFactor), notes: "Corrugador medial" },
-          { id: "corr_r1", muscle: "corrugator_right", x: 65, y: 22, depth: "deep", dosage: Math.round(8 * conversionFactor), notes: "Corrugador medial" },
+          { id: "proc_1", muscle: "procerus", x: 50, y: 36, depth: "deep", dosage: Math.round(5 * conversionFactor), notes: "Ponto central do procerus", confidence: 0.90 },
+          { id: "corr_l1", muscle: "corrugator_left", x: 43, y: 34, depth: "deep", dosage: Math.round(4 * conversionFactor), notes: "Corrugador medial", confidence: 0.88 },
+          { id: "corr_r1", muscle: "corrugator_right", x: 57, y: 34, depth: "deep", dosage: Math.round(4 * conversionFactor), notes: "Corrugador medial", confidence: 0.88 },
         ],
-        totalDosage: { procerus: Math.round(8 * conversionFactor), corrugator: Math.round(16 * conversionFactor), total: Math.round(24 * conversionFactor) },
-        clinicalNotes: "Análise padrão (fallback).",
+        totalDosage: { procerus: Math.round(5 * conversionFactor), corrugator: Math.round(8 * conversionFactor), total: Math.round(13 * conversionFactor) },
+        clinicalNotes: "Análise padrão (fallback). Dosagens conservadoras baseadas no consenso brasileiro.",
         confidence: 0.5,
       });
       setStep(4);

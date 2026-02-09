@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { InjectionPoint } from "./Face3DViewer";
 import { MUSCLE_LABELS, getZoneFromMuscle, AnatomicalZone } from "@/lib/muscleUtils";
 import { ZONE_BOUNDARIES, validateCoordinatesForZone } from "@/lib/coordinateMapping";
-import { useFaceLandmarksOnImage } from "@/hooks/useFaceLandmarksOnImage";
+import { useFaceLandmarksOnImage, NormalizedRect } from "@/hooks/useFaceLandmarksOnImage";
 
 interface PhotoPointsOverlayProps {
   photoUrl: string;
@@ -14,6 +14,8 @@ interface PhotoPointsOverlayProps {
   onPointClick?: (point: InjectionPoint) => void;
   selectedPointId?: string | null;
   showZoneBoundaries?: boolean;
+  /** Pre-computed faceBox from backend – skips real-time detection when provided */
+  persistedFaceBox?: NormalizedRect | null;
 }
 
 // Get confidence color based on score
@@ -41,6 +43,7 @@ export function PhotoPointsOverlay({
   onPointClick,
   selectedPointId,
   showZoneBoundaries: initialShowZones = false,
+  persistedFaceBox,
 }: PhotoPointsOverlayProps) {
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -54,8 +57,11 @@ export function PhotoPointsOverlay({
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
 
-  // Detect face box on the actual photo so points (face-relative) stay correct even with different photo proportions/background.
-  const { faceBox } = useFaceLandmarksOnImage(imageRef.current);
+  // Use persisted faceBox when available; otherwise detect in real-time.
+  const { faceBox: detectedFaceBox } = useFaceLandmarksOnImage(
+    persistedFaceBox ? null : imageRef.current
+  );
+  const faceBox = persistedFaceBox ?? detectedFaceBox;
 
   const MIN_ZOOM = 0.5;
   const MAX_ZOOM = 3;

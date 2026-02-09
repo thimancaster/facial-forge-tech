@@ -39,9 +39,35 @@ function clamp01(n: number) {
   return Math.max(0, Math.min(1, n));
 }
 
+/** Detect face bounding box from an HTMLImageElement. Reusable outside hooks. */
+export async function detectFaceBox(imageEl: HTMLImageElement): Promise<NormalizedRect | null> {
+  const landmarker = await getFaceLandmarker();
+  const result = landmarker.detect(imageEl);
+  const landmarks = result?.faceLandmarks?.[0];
+
+  if (!landmarks || landmarks.length < 100) return null;
+
+  let xMin = 1, yMin = 1, xMax = 0, yMax = 0;
+  for (const lm of landmarks) {
+    xMin = Math.min(xMin, lm.x);
+    yMin = Math.min(yMin, lm.y);
+    xMax = Math.max(xMax, lm.x);
+    yMax = Math.max(yMax, lm.y);
+  }
+
+  const padX = (xMax - xMin) * 0.06;
+  const padY = (yMax - yMin) * 0.08;
+
+  return {
+    x: clamp01(xMin - padX),
+    y: clamp01(yMin - padY),
+    width: clamp01(xMax - xMin + padX * 2),
+    height: clamp01(yMax - yMin + padY * 2),
+  };
+}
+
 /**
- * Detecta landmarks (1 face) em uma imagem estática e retorna uma bounding box normalizada (0-1) para mapear
- * coordenadas face-relativas (0-1) → coordenadas da imagem.
+ * Detecta landmarks (1 face) em uma imagem estática e retorna uma bounding box normalizada (0-1).
  */
 export function useFaceLandmarksOnImage(imageEl: HTMLImageElement | null) {
   const [state, setState] = useState<DetectionState>({ status: "idle" });
@@ -56,41 +82,10 @@ export function useFaceLandmarksOnImage(imageEl: HTMLImageElement | null) {
       setState({ status: "loading" });
 
       try {
-        const landmarker = await getFaceLandmarker();
-        const result = landmarker.detect(imageEl);
-        const landmarks = result?.faceLandmarks?.[0];
+        const faceBox = await detectFaceBox(imageEl);
+        if (!faceBox) throw new Error("Nenhuma face detectada na foto");
 
-        if (!landmarks || landmarks.length < 100) {
-          throw new Error("Nenhuma face detectada na foto");
-        }
-
-        // Bounding box robusta: usa todos os landmarks para contorno (inclui testa/queixo/maçãs) e evita depender do background.
-        let xMin = 1,
-          yMin = 1,
-          xMax = 0,
-          yMax = 0;
-
-        for (const lm of landmarks) {
-          xMin = Math.min(xMin, lm.x);
-          yMin = Math.min(yMin, lm.y);
-          xMax = Math.max(xMax, lm.x);
-          yMax = Math.max(yMax, lm.y);
-        }
-
-        // Pequena margem para aproximar “hairline → chin” e laterais (sem extrapolar demais)
-        const padX = (xMax - xMin) * 0.06;
-        const padY = (yMax - yMin) * 0.08;
-
-        const faceBox: NormalizedRect = {
-          x: clamp01(xMin - padX),
-          y: clamp01(yMin - padY),
-          width: clamp01(xMax - xMin + padX * 2),
-          height: clamp01(yMax - yMin + padY * 2),
-        };
-
-        // “Confiança” aqui é heurística: quanto maior a área ocupada, mais estável tende a ser.
         const confidence = clamp01((faceBox.width * faceBox.height) / 0.45);
-
         if (!cancelled) setState({ status: "ready", faceBox, confidence });
       } catch (e: any) {
         if (!cancelled) setState({ status: "error", message: e?.message || "Falha ao detectar face" });

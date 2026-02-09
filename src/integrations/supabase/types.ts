@@ -22,6 +22,7 @@ export type Database = {
           conversion_factor: number | null
           corrugator_dosage: number | null
           created_at: string
+          face_boxes: Json | null
           frontal_photo_url: string | null
           glabellar_photo_url: string | null
           id: string
@@ -52,6 +53,7 @@ export type Database = {
           conversion_factor?: number | null
           corrugator_dosage?: number | null
           created_at?: string
+          face_boxes?: Json | null
           frontal_photo_url?: string | null
           glabellar_photo_url?: string | null
           id?: string
@@ -82,6 +84,7 @@ export type Database = {
           conversion_factor?: number | null
           corrugator_dosage?: number | null
           created_at?: string
+          face_boxes?: Json | null
           frontal_photo_url?: string | null
           glabellar_photo_url?: string | null
           id?: string

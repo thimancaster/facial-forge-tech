@@ -1,4 +1,5 @@
 import { useState, useMemo, useRef, useCallback, useEffect } from "react";
+import { NormalizedRect, detectFaceBox } from "@/hooks/useFaceLandmarksOnImage";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -208,15 +209,33 @@ export function NewAnalysisWizard({ initialPatientId }: NewAnalysisWizardProps) 
   
   // Temporary photo URLs for preview and AI analysis
   const [photoUrls, setPhotoUrls] = useState<Record<PhotoType, string | null>>({
-    resting: null,
-    glabellar: null,
-    frontal: null,
-    smile: null,
-    nasal: null,
-    perioral: null,
-    profile_left: null,
-    profile_right: null,
+    resting: null, glabellar: null, frontal: null, smile: null,
+    nasal: null, perioral: null, profile_left: null, profile_right: null,
   });
+
+  // Persisted face bounding boxes per photo type (detected once, reused deterministically)
+  const [faceBoxes, setFaceBoxes] = useState<Record<PhotoType, NormalizedRect | null>>({
+    resting: null, glabellar: null, frontal: null, smile: null,
+    nasal: null, perioral: null, profile_left: null, profile_right: null,
+  });
+
+  // Detect faceBox for a given photo blob URL using shared singleton
+  const detectAndStoreFaceBox = useCallback(async (type: PhotoType, blobUrl: string) => {
+    try {
+      const img = document.createElement("img");
+      img.crossOrigin = "anonymous";
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = reject;
+        img.src = blobUrl;
+      });
+
+      const box = await detectFaceBox(img);
+      if (box) setFaceBoxes(prev => ({ ...prev, [type]: box }));
+    } catch {
+      if (import.meta.env.DEV) console.warn(`[DEV] faceBox detection failed for ${type}`);
+    }
+  }, []);
 
   const handlePhotoUpload = (type: PhotoType) => (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -224,6 +243,7 @@ export function NewAnalysisWizard({ initialPatientId }: NewAnalysisWizardProps) 
       setPhotos(prev => ({ ...prev, [type]: file }));
       const url = URL.createObjectURL(file);
       setPhotoUrls(prev => ({ ...prev, [type]: url }));
+      detectAndStoreFaceBox(type, url);
     }
   };
 
@@ -231,6 +251,7 @@ export function NewAnalysisWizard({ initialPatientId }: NewAnalysisWizardProps) 
     setPhotos(prev => ({ ...prev, [type]: file }));
     const url = URL.createObjectURL(file);
     setPhotoUrls(prev => ({ ...prev, [type]: url }));
+    detectAndStoreFaceBox(type, url);
   };
 
   const removePhoto = (type: PhotoType) => {
@@ -239,6 +260,7 @@ export function NewAnalysisWizard({ initialPatientId }: NewAnalysisWizardProps) 
     }
     setPhotos(prev => ({ ...prev, [type]: null }));
     setPhotoUrls(prev => ({ ...prev, [type]: null }));
+    setFaceBoxes(prev => ({ ...prev, [type]: null }));
   };
 
   const uploadPhotoToStorage = async (file: File, userId: string, patientId: string, photoType: PhotoType): Promise<string | null> => {
@@ -668,6 +690,7 @@ export function NewAnalysisWizard({ initialPatientId }: NewAnalysisWizardProps) 
           muscle_strength_score: muscleStrength,
           skin_type_glogau: skinTypeGlogau,
           safety_zones: aiAnalysis?.safetyZones as any || null,
+          face_boxes: faceBoxes as any,
           status: 'completed',
         });
 
@@ -686,6 +709,10 @@ export function NewAnalysisWizard({ initialPatientId }: NewAnalysisWizardProps) 
         nasal: null, perioral: null, profile_left: null, profile_right: null,
       });
       setPhotoUrls({
+        resting: null, glabellar: null, frontal: null, smile: null,
+        nasal: null, perioral: null, profile_left: null, profile_right: null,
+      });
+      setFaceBoxes({
         resting: null, glabellar: null, frontal: null, smile: null,
         nasal: null, perioral: null, profile_left: null, profile_right: null,
       });
@@ -1194,6 +1221,7 @@ export function NewAnalysisWizard({ initialPatientId }: NewAnalysisWizardProps) 
                       injectionPoints={aiAnalysis.injectionPoints}
                       onPointClick={setSelectedPoint}
                       selectedPointId={selectedPoint?.id}
+                      persistedFaceBox={faceBoxes.resting}
                     />
                   ) : (
                     <div className="h-full flex items-center justify-center bg-muted/30 rounded-lg border-2 border-dashed border-border">

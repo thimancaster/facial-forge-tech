@@ -8,7 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
   ArrowLeft, User, Calendar, FileText, Activity, 
   ClipboardList, TrendingUp, Camera, Loader2, AlertCircle,
-  PlusCircle, Phone, Mail, Heart, Image as ImageIcon
+  PlusCircle, Phone, Mail, Heart, Image as ImageIcon, Crosshair
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -16,6 +16,10 @@ import { PatientTreatmentHistory } from "@/components/PatientTreatmentHistory";
 import { BeforeAfterComparison } from "@/components/BeforeAfterComparison";
 import { TreatmentTimeline } from "@/components/TreatmentTimeline";
 import { SecureImage } from "@/components/SecureImage";
+import { PhotoPointsOverlay } from "@/components/PhotoPointsOverlay";
+import { InjectionPoint } from "@/components/Face3DViewer";
+import { NormalizedRect } from "@/hooks/useFaceLandmarksOnImage";
+import { Json } from "@/integrations/supabase/types";
 import {
   Dialog,
   DialogContent,
@@ -41,6 +45,8 @@ interface Patient {
   photo_url?: string | null;
 }
 
+type PhotoKey = 'resting' | 'glabellar' | 'frontal' | 'smile' | 'nasal' | 'perioral' | 'profile_left' | 'profile_right';
+
 interface Analysis {
   id: string;
   created_at: string;
@@ -53,6 +59,8 @@ interface Analysis {
   patient_gender: string | null;
   ai_confidence: number | null;
   ai_clinical_notes: string | null;
+  ai_injection_points: Json | null;
+  face_boxes: Json | null;
   resting_photo_url: string | null;
   glabellar_photo_url: string | null;
   frontal_photo_url: string | null;
@@ -73,6 +81,8 @@ export default function PatientDetail() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
+  const [selectedPhotoAnalysis, setSelectedPhotoAnalysis] = useState<Analysis | null>(null);
+  const [selectedPhotoKey, setSelectedPhotoKey] = useState<PhotoKey | null>(null);
   const [showComparison, setShowComparison] = useState(false);
 
   useEffect(() => {
@@ -156,16 +166,37 @@ export default function PatientDetail() {
   };
 
   const getAllPhotosFromAnalysis = (analysis: Analysis) => {
-    const photos: { url: string; label: string }[] = [];
-    if (analysis.resting_photo_url) photos.push({ url: analysis.resting_photo_url, label: 'Repouso' });
-    if (analysis.glabellar_photo_url) photos.push({ url: analysis.glabellar_photo_url, label: 'Glabelar' });
-    if (analysis.frontal_photo_url) photos.push({ url: analysis.frontal_photo_url, label: 'Frontal' });
-    if (analysis.smile_photo_url) photos.push({ url: analysis.smile_photo_url, label: 'Sorriso' });
-    if (analysis.nasal_photo_url) photos.push({ url: analysis.nasal_photo_url, label: 'Nasal' });
-    if (analysis.perioral_photo_url) photos.push({ url: analysis.perioral_photo_url, label: 'Perioral' });
-    if (analysis.profile_left_photo_url) photos.push({ url: analysis.profile_left_photo_url, label: 'Perfil E' });
-    if (analysis.profile_right_photo_url) photos.push({ url: analysis.profile_right_photo_url, label: 'Perfil D' });
+    const photos: { url: string; label: string; key: PhotoKey }[] = [];
+    if (analysis.resting_photo_url) photos.push({ url: analysis.resting_photo_url, label: 'Repouso', key: 'resting' });
+    if (analysis.glabellar_photo_url) photos.push({ url: analysis.glabellar_photo_url, label: 'Glabelar', key: 'glabellar' });
+    if (analysis.frontal_photo_url) photos.push({ url: analysis.frontal_photo_url, label: 'Frontal', key: 'frontal' });
+    if (analysis.smile_photo_url) photos.push({ url: analysis.smile_photo_url, label: 'Sorriso', key: 'smile' });
+    if (analysis.nasal_photo_url) photos.push({ url: analysis.nasal_photo_url, label: 'Nasal', key: 'nasal' });
+    if (analysis.perioral_photo_url) photos.push({ url: analysis.perioral_photo_url, label: 'Perioral', key: 'perioral' });
+    if (analysis.profile_left_photo_url) photos.push({ url: analysis.profile_left_photo_url, label: 'Perfil E', key: 'profile_left' });
+    if (analysis.profile_right_photo_url) photos.push({ url: analysis.profile_right_photo_url, label: 'Perfil D', key: 'profile_right' });
     return photos;
+  };
+
+  const handlePhotoClick = (url: string, analysis: Analysis, photoKey: PhotoKey) => {
+    setSelectedPhoto(url);
+    setSelectedPhotoAnalysis(analysis);
+    setSelectedPhotoKey(photoKey);
+  };
+
+  const getPersistedFaceBox = (analysis: Analysis, photoKey: PhotoKey): NormalizedRect | null => {
+    if (!analysis.face_boxes || typeof analysis.face_boxes !== 'object') return null;
+    const boxes = analysis.face_boxes as Record<string, any>;
+    const box = boxes[photoKey];
+    if (box && typeof box.x === 'number' && typeof box.y === 'number') {
+      return box as NormalizedRect;
+    }
+    return null;
+  };
+
+  const getInjectionPoints = (analysis: Analysis): InjectionPoint[] => {
+    if (!analysis.ai_injection_points || !Array.isArray(analysis.ai_injection_points)) return [];
+    return analysis.ai_injection_points as unknown as InjectionPoint[];
   };
 
   if (isLoading) {
@@ -350,13 +381,18 @@ export default function PatientDetail() {
                             <div 
                               key={pIndex}
                               className="relative aspect-square cursor-pointer group"
-                              onClick={() => setSelectedPhoto(photo.url)}
+                              onClick={() => handlePhotoClick(photo.url, analysis, photo.key)}
                             >
                               <SecureImage 
                                 src={photo.url} 
                                 alt={photo.label}
                                 className="w-full h-full rounded-lg border border-border group-hover:border-primary transition-colors"
                               />
+                              {getInjectionPoints(analysis).length > 0 && getPersistedFaceBox(analysis, photo.key) && (
+                                <div className="absolute top-1 left-1">
+                                  <Crosshair className="w-3 h-3 text-primary drop-shadow-md" />
+                                </div>
+                              )}
                               <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-1 rounded-b-lg">
                                 <p className="text-[10px] text-white text-center truncate">{photo.label}</p>
                               </div>
@@ -617,22 +653,41 @@ export default function PatientDetail() {
         </Tabs>
       </div>
 
-      {/* Photo Lightbox */}
-      <Dialog open={!!selectedPhoto} onOpenChange={() => setSelectedPhoto(null)}>
+      {/* Photo Lightbox - with deterministic injection points overlay */}
+      <Dialog open={!!selectedPhoto} onOpenChange={() => { setSelectedPhoto(null); setSelectedPhotoAnalysis(null); setSelectedPhotoKey(null); }}>
         <DialogContent className="max-w-4xl p-0 overflow-hidden">
           <DialogHeader className="p-4 pb-0">
             <DialogTitle>Visualização</DialogTitle>
           </DialogHeader>
-          {selectedPhoto && (
-            <div className="p-4">
-              <SecureImage 
-                src={selectedPhoto} 
-                alt="Foto ampliada"
-                className="w-full h-auto max-h-[70vh] rounded-lg"
-                objectFit="contain"
-              />
-            </div>
-          )}
+          {selectedPhoto && (() => {
+            const injPoints = selectedPhotoAnalysis ? getInjectionPoints(selectedPhotoAnalysis) : [];
+            const faceBox = selectedPhotoAnalysis && selectedPhotoKey 
+              ? getPersistedFaceBox(selectedPhotoAnalysis, selectedPhotoKey) 
+              : null;
+            const showOverlay = injPoints.length > 0 && faceBox;
+            
+            return (
+              <div className="p-4">
+                {showOverlay ? (
+                  <div className="max-h-[70vh] overflow-auto rounded-lg">
+                    <PhotoPointsOverlay
+                      photoUrl={selectedPhoto}
+                      injectionPoints={injPoints}
+                      persistedFaceBox={faceBox}
+                      showZoneBoundaries
+                    />
+                  </div>
+                ) : (
+                  <SecureImage 
+                    src={selectedPhoto} 
+                    alt="Foto ampliada"
+                    className="w-full h-auto max-h-[70vh] rounded-lg"
+                    objectFit="contain"
+                  />
+                )}
+              </div>
+            );
+          })()}
         </DialogContent>
       </Dialog>
     </div>

@@ -1,12 +1,12 @@
 import { useState, useRef, useCallback, useEffect, WheelEvent, useMemo } from "react";
-import { ZoomIn, ZoomOut, RotateCcw, Grid3X3 } from "lucide-react";
+import { ZoomIn, ZoomOut, RotateCcw, Grid3X3, Maximize2, Minimize2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { InjectionPoint } from "./Face3DViewer";
 import { MUSCLE_LABELS, getZoneFromMuscle, AnatomicalZone } from "@/lib/muscleUtils";
 import { ZONE_BOUNDARIES, validateCoordinatesForZone } from "@/lib/coordinateMapping";
-import { useFaceLandmarksOnImage, NormalizedRect } from "@/hooks/useFaceLandmarksOnImage";
+import { useFaceLandmarksOnImage, NormalizedRect, FaceAnchors } from "@/hooks/useFaceLandmarksOnImage";
 
 interface PhotoPointsOverlayProps {
   photoUrl: string;
@@ -16,6 +16,8 @@ interface PhotoPointsOverlayProps {
   showZoneBoundaries?: boolean;
   /** Pre-computed faceBox from backend – skips real-time detection when provided */
   persistedFaceBox?: NormalizedRect | null;
+  /** Pre-computed facial anchors for proportional mapping */
+  persistedAnchors?: FaceAnchors | null;
 }
 
 // Get confidence color based on score
@@ -37,6 +39,85 @@ const ZONE_COLORS: Record<AnatomicalZone, string> = {
   unknown: "#6B7280",
 };
 
+/**
+ * Anatomical anchor-based mapping.
+ * Instead of linearly interpolating within a bounding box, this uses actual 
+ * facial landmark positions to create a piecewise proportional mapping that
+ * follows the patient's real facial anatomy.
+ * 
+ * The AI coordinates (0-1 face-relative) assume a standardized face:
+ * - y≈0.10-0.25 = forehead (frontalis)
+ * - y≈0.30-0.40 = glabella/eyes
+ * - y≈0.42-0.56 = nose
+ * - y≈0.58-0.75 = perioral
+ * - y≈0.78-0.95 = chin/mentalis
+ * 
+ * We map these using vertical anchor bands derived from actual detected landmarks.
+ */
+function createAnchorMapper(anchors: FaceAnchors, faceBox: NormalizedRect) {
+  // Vertical anchors: map standardized Y zones to actual Y positions
+  // These are image-relative (0-1)
+  const verticalAnchors = [
+    { stdY: 0.00, imgY: faceBox.y },                             // top of face box
+    { stdY: 0.10, imgY: anchors.forehead.y - (anchors.forehead.y - faceBox.y) * 0.3 }, // upper forehead
+    { stdY: 0.20, imgY: anchors.forehead.y },                    // forehead center
+    { stdY: 0.32, imgY: (anchors.forehead.y + anchors.leftEyeOuter.y) / 2 }, // eyebrow level
+    { stdY: 0.38, imgY: (anchors.leftEyeOuter.y + anchors.rightEyeOuter.y) / 2 }, // eye level
+    { stdY: 0.48, imgY: anchors.noseTop.y },                     // nose bridge
+    { stdY: 0.55, imgY: anchors.noseTip.y },                     // nose tip
+    { stdY: 0.65, imgY: anchors.upperLip.y },                    // upper lip
+    { stdY: 0.68, imgY: (anchors.leftLipCorner.y + anchors.rightLipCorner.y) / 2 }, // lip corners
+    { stdY: 0.85, imgY: (anchors.chin.y + anchors.upperLip.y) / 2 }, // between lip and chin
+    { stdY: 0.92, imgY: anchors.chin.y },                        // chin
+    { stdY: 1.00, imgY: faceBox.y + faceBox.height },            // bottom of face box
+  ];
+
+  // Horizontal anchors: map standardized X to actual X positions
+  const horizontalAnchors = [
+    { stdX: 0.00, imgX: faceBox.x },                             // left edge
+    { stdX: 0.15, imgX: anchors.leftCheek.x },                   // left cheek
+    { stdX: 0.22, imgX: anchors.leftEyeOuter.x },                // left eye outer
+    { stdX: 0.35, imgX: anchors.leftEyeInner.x },                // left eye inner
+    { stdX: 0.50, imgX: anchors.noseTip.x },                     // center (nose)
+    { stdX: 0.65, imgX: anchors.rightEyeInner.x },               // right eye inner
+    { stdX: 0.78, imgX: anchors.rightEyeOuter.x },               // right eye outer
+    { stdX: 0.85, imgX: anchors.rightCheek.x },                  // right cheek
+    { stdX: 1.00, imgX: faceBox.x + faceBox.width },             // right edge
+  ];
+
+  // Sort by std value
+  verticalAnchors.sort((a, b) => a.stdY - b.stdY);
+  horizontalAnchors.sort((a, b) => a.stdX - b.stdX);
+
+  return (xStd: number, yStd: number) => {
+    // Piecewise linear interpolation for Y
+    let imgY = faceBox.y + yStd * faceBox.height;
+    for (let i = 0; i < verticalAnchors.length - 1; i++) {
+      const a = verticalAnchors[i];
+      const b = verticalAnchors[i + 1];
+      if (yStd >= a.stdY && yStd <= b.stdY) {
+        const t = (yStd - a.stdY) / (b.stdY - a.stdY);
+        imgY = a.imgY + t * (b.imgY - a.imgY);
+        break;
+      }
+    }
+
+    // Piecewise linear interpolation for X
+    let imgX = faceBox.x + xStd * faceBox.width;
+    for (let i = 0; i < horizontalAnchors.length - 1; i++) {
+      const a = horizontalAnchors[i];
+      const b = horizontalAnchors[i + 1];
+      if (xStd >= a.stdX && xStd <= b.stdX) {
+        const t = (xStd - a.stdX) / (b.stdX - a.stdX);
+        imgX = a.imgX + t * (b.imgX - a.imgX);
+        break;
+      }
+    }
+
+    return { x: imgX, y: imgY };
+  };
+}
+
 export function PhotoPointsOverlay({
   photoUrl,
   injectionPoints,
@@ -44,6 +125,7 @@ export function PhotoPointsOverlay({
   selectedPointId,
   showZoneBoundaries: initialShowZones = false,
   persistedFaceBox,
+  persistedAnchors,
 }: PhotoPointsOverlayProps) {
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -54,14 +136,25 @@ export function PhotoPointsOverlay({
   const [containerDimensions, setContainerDimensions] = useState({ width: 0, height: 0 });
   const [showZoneBoundaries, setShowZoneBoundaries] = useState(initialShowZones);
   const [hoveredZone, setHoveredZone] = useState<AnatomicalZone | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
 
   // Use persisted faceBox when available; otherwise detect in real-time.
-  const { faceBox: detectedFaceBox } = useFaceLandmarksOnImage(
+  const { faceBox: detectedFaceBox, anchors: detectedAnchors } = useFaceLandmarksOnImage(
     persistedFaceBox ? null : imageRef.current
   );
   const faceBox = persistedFaceBox ?? detectedFaceBox;
+  const anchors = persistedAnchors ?? detectedAnchors;
+
+  // Create anchor-based mapper when available
+  const anchorMapper = useMemo(() => {
+    if (anchors && faceBox) {
+      return createAnchorMapper(anchors, faceBox);
+    }
+    return null;
+  }, [anchors, faceBox]);
 
   const MIN_ZOOM = 0.5;
   const MAX_ZOOM = 3;
@@ -82,6 +175,20 @@ export function PhotoPointsOverlay({
     window.addEventListener("resize", updateContainerDimensions);
     return () => window.removeEventListener("resize", updateContainerDimensions);
   }, []);
+
+  // Update dimensions when fullscreen changes
+  useEffect(() => {
+    if (containerRef.current) {
+      // Small delay to allow DOM to update
+      const timer = setTimeout(() => {
+        setContainerDimensions({
+          width: containerRef.current!.clientWidth,
+          height: containerRef.current!.clientHeight,
+        });
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [isFullscreen]);
 
   // Handle image load to get natural dimensions
   const handleImageLoad = useCallback(() => {
@@ -106,32 +213,34 @@ export function PhotoPointsOverlay({
     let renderedHeight: number;
 
     if (imageAspect > containerAspect) {
-      // Image is wider than container - fit to width
       renderedWidth = containerDimensions.width;
       renderedHeight = containerDimensions.width / imageAspect;
     } else {
-      // Image is taller than container - fit to height
       renderedHeight = containerDimensions.height;
       renderedWidth = containerDimensions.height * imageAspect;
     }
 
-    // Calculate offset to center the image
     const offsetX = (containerDimensions.width - renderedWidth) / 2;
     const offsetY = (containerDimensions.height - renderedHeight) / 2;
 
     return { width: renderedWidth, height: renderedHeight, offsetX, offsetY };
   }, [imageDimensions, containerDimensions]);
 
-  // Face-relative (0-1) → image-relative (0-1)
+  // Face-relative (0-1) → image-relative (0-1) using anchor-based or fallback linear mapping
   const faceToImage = useCallback(
     (xFace: number, yFace: number) => {
+      // Use anchor-based mapping when available for anatomical precision
+      if (anchorMapper) {
+        return anchorMapper(xFace, yFace);
+      }
+      // Fallback: simple linear mapping within bounding box
       const box = faceBox ?? { x: 0, y: 0, width: 1, height: 1 };
       return {
         x: box.x + xFace * box.width,
         y: box.y + yFace * box.height,
       };
     },
-    [faceBox]
+    [faceBox, anchorMapper]
   );
 
   // Convert point percentage (0-100 face-relative) to pixel position on the rendered image
@@ -171,8 +280,25 @@ export function PhotoPointsOverlay({
     setPan({ x: 0, y: 0 });
   };
 
+  const toggleFullscreen = () => {
+    setIsFullscreen(prev => !prev);
+    // Reset zoom and pan when toggling
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  };
+
+  // Close fullscreen on Escape key
+  useEffect(() => {
+    if (!isFullscreen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setIsFullscreen(false);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isFullscreen]);
+
   const handleMouseDown = (e: React.MouseEvent) => {
-    if (e.button !== 0) return; // Only left click
+    if (e.button !== 0) return;
     setIsDragging(true);
     setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
   };
@@ -218,15 +344,11 @@ export function PhotoPointsOverlay({
         return { x: offsetX + x * width, y: offsetY + y * height };
       };
 
-      // For bilateral zones (periorbital, masseter), render both sides
       const isBilateral = zone === "periorbital" || zone === "masseter";
 
       if (isBilateral) {
-        // Left side (face coords)
         const p1 = toPx(bounds.xMin, bounds.yMin);
         const p2 = toPx(bounds.xMax, bounds.yMax);
-
-        // Right side mirrored in face coords
         const rp1 = toPx(1 - bounds.xMax, bounds.yMin);
         const rp2 = toPx(1 - bounds.xMin, bounds.yMax);
 
@@ -246,7 +368,6 @@ export function PhotoPointsOverlay({
         };
       }
 
-      // Central zones
       const p1 = toPx(bounds.xMin, bounds.yMin);
       const p2 = toPx(bounds.xMax, bounds.yMax);
 
@@ -260,16 +381,25 @@ export function PhotoPointsOverlay({
     [getRenderedImageSize, faceToImage]
   );
 
-  // Check if a point is outside its expected zone
   const getPointValidation = useCallback((point: InjectionPoint) => {
     const zone = getZoneFromMuscle(point.muscle);
     return validateCoordinatesForZone(point.x, point.y, zone);
   }, []);
 
-  return (
-    <div className="relative w-full h-full bg-slate-900 rounded-lg overflow-hidden">
+  const overlayContent = (
+    <>
       {/* Zoom Controls */}
       <div className="absolute top-4 right-4 z-20 flex flex-col gap-2 bg-white/90 backdrop-blur-sm rounded-lg p-2 shadow-lg border border-slate-200">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={toggleFullscreen}
+          className="h-8 w-8"
+          title={isFullscreen ? "Sair da tela cheia" : "Tela cheia"}
+        >
+          {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+        </Button>
+        <div className="border-t border-slate-200 pt-2" />
         <Button
           variant="ghost"
           size="icon"
@@ -324,6 +454,7 @@ export function PhotoPointsOverlay({
           <span>🖱️ Scroll para zoom</span>
           <span>✋ Arraste para mover</span>
           <span>👆 Clique nos pontos</span>
+          {isFullscreen && <span>⎋ ESC para sair</span>}
         </div>
       </div>
 
@@ -371,56 +502,35 @@ export function PhotoPointsOverlay({
                 const { left, right } = zonePath;
                 return (
                   <g key={zone}>
-                    {/* Left side */}
                     <rect
-                      x={left.x}
-                      y={left.y}
-                      width={left.width}
-                      height={left.height}
-                      fill={color}
-                      fillOpacity={hoveredZone === zone ? 0.25 : 0.12}
-                      stroke={color}
-                      strokeWidth={2 / zoom}
-                      strokeDasharray={`${6 / zoom} ${4 / zoom}`}
-                      rx={4 / zoom}
+                      x={left.x} y={left.y} width={left.width} height={left.height}
+                      fill={color} fillOpacity={hoveredZone === zone ? 0.25 : 0.12}
+                      stroke={color} strokeWidth={2 / zoom}
+                      strokeDasharray={`${6 / zoom} ${4 / zoom}`} rx={4 / zoom}
                       style={{ pointerEvents: 'auto', cursor: 'pointer' }}
                       onMouseEnter={() => setHoveredZone(zone)}
                       onMouseLeave={() => setHoveredZone(null)}
                     />
-                    {/* Right side */}
                     <rect
-                      x={right.x}
-                      y={right.y}
-                      width={right.width}
-                      height={right.height}
-                      fill={color}
-                      fillOpacity={hoveredZone === zone ? 0.25 : 0.12}
-                      stroke={color}
-                      strokeWidth={2 / zoom}
-                      strokeDasharray={`${6 / zoom} ${4 / zoom}`}
-                      rx={4 / zoom}
+                      x={right.x} y={right.y} width={right.width} height={right.height}
+                      fill={color} fillOpacity={hoveredZone === zone ? 0.25 : 0.12}
+                      stroke={color} strokeWidth={2 / zoom}
+                      strokeDasharray={`${6 / zoom} ${4 / zoom}`} rx={4 / zoom}
                       style={{ pointerEvents: 'auto', cursor: 'pointer' }}
                       onMouseEnter={() => setHoveredZone(zone)}
                       onMouseLeave={() => setHoveredZone(null)}
                     />
-                    {/* Labels */}
                     <text
-                      x={left.x + left.width / 2}
-                      y={left.y + 14 / zoom}
-                      textAnchor="middle"
-                      fontSize={10 / zoom}
-                      fill={color}
+                      x={left.x + left.width / 2} y={left.y + 14 / zoom}
+                      textAnchor="middle" fontSize={10 / zoom} fill={color}
                       fontWeight="bold"
                       style={{ textShadow: '0 1px 2px rgba(0,0,0,0.8)', pointerEvents: 'none' }}
                     >
                       {zone.toUpperCase()} (E)
                     </text>
                     <text
-                      x={right.x + right.width / 2}
-                      y={right.y + 14 / zoom}
-                      textAnchor="middle"
-                      fontSize={10 / zoom}
-                      fill={color}
+                      x={right.x + right.width / 2} y={right.y + 14 / zoom}
+                      textAnchor="middle" fontSize={10 / zoom} fill={color}
                       fontWeight="bold"
                       style={{ textShadow: '0 1px 2px rgba(0,0,0,0.8)', pointerEvents: 'none' }}
                     >
@@ -430,31 +540,21 @@ export function PhotoPointsOverlay({
                 );
               }
 
-              // Central zones
               const { x, y, width, height } = zonePath;
               return (
                 <g key={zone}>
                   <rect
-                    x={x}
-                    y={y}
-                    width={width}
-                    height={height}
-                    fill={color}
-                    fillOpacity={hoveredZone === zone ? 0.25 : 0.12}
-                    stroke={color}
-                    strokeWidth={2 / zoom}
-                    strokeDasharray={`${6 / zoom} ${4 / zoom}`}
-                    rx={4 / zoom}
+                    x={x} y={y} width={width} height={height}
+                    fill={color} fillOpacity={hoveredZone === zone ? 0.25 : 0.12}
+                    stroke={color} strokeWidth={2 / zoom}
+                    strokeDasharray={`${6 / zoom} ${4 / zoom}`} rx={4 / zoom}
                     style={{ pointerEvents: 'auto', cursor: 'pointer' }}
                     onMouseEnter={() => setHoveredZone(zone)}
                     onMouseLeave={() => setHoveredZone(null)}
                   />
                   <text
-                    x={x + width / 2}
-                    y={y + 14 / zoom}
-                    textAnchor="middle"
-                    fontSize={10 / zoom}
-                    fill={color}
+                    x={x + width / 2} y={y + 14 / zoom}
+                    textAnchor="middle" fontSize={10 / zoom} fill={color}
                     fontWeight="bold"
                     style={{ textShadow: '0 1px 2px rgba(0,0,0,0.8)', pointerEvents: 'none' }}
                   >
@@ -474,7 +574,6 @@ export function PhotoPointsOverlay({
               const zone = getZoneFromMuscle(point.muscle);
               const validation = getPointValidation(point);
 
-              // Get pixel position
               const { x, y } = getPointPosition(point);
               if (x === 0 && y === 0) return null;
 
@@ -486,21 +585,14 @@ export function PhotoPointsOverlay({
                   {!validation.valid && (
                     <>
                       <circle
-                        cx={x}
-                        cy={y}
-                        r={scaledRadius * 2.2}
-                        fill="none"
-                        stroke="#EF4444"
-                        strokeWidth={3 / zoom}
+                        cx={x} cy={y} r={scaledRadius * 2.2}
+                        fill="none" stroke="#EF4444" strokeWidth={3 / zoom}
                         strokeDasharray={`${4 / zoom} ${2 / zoom}`}
                         className="animate-pulse"
                       />
                       <text
-                        x={x + scaledRadius * 2}
-                        y={y - scaledRadius * 2}
-                        fontSize={10 / zoom}
-                        fill="#EF4444"
-                        fontWeight="bold"
+                        x={x + scaledRadius * 2} y={y - scaledRadius * 2}
+                        fontSize={10 / zoom} fill="#EF4444" fontWeight="bold"
                         style={{ textShadow: '0 1px 2px rgba(0,0,0,0.8)', pointerEvents: 'none' }}
                       >
                         ⚠️ Fora da zona
@@ -510,41 +602,28 @@ export function PhotoPointsOverlay({
 
                   {/* Diffusion halo */}
                   <circle
-                    cx={x}
-                    cy={y}
-                    r={haloRadius}
+                    cx={x} cy={y} r={haloRadius}
                     fill={point.depth === "deep" ? "#7C3AED" : "#10B981"}
-                    opacity={0.25}
-                    className="transition-opacity"
+                    opacity={0.25} className="transition-opacity"
                   />
 
                   {/* Confidence ring */}
                   <circle
-                    cx={x}
-                    cy={y}
-                    r={scaledRadius * 1.5}
-                    fill="none"
-                    stroke={confidenceColor}
-                    strokeWidth={2.5 / zoom}
-                    opacity={0.9}
+                    cx={x} cy={y} r={scaledRadius * 1.5}
+                    fill="none" stroke={confidenceColor}
+                    strokeWidth={2.5 / zoom} opacity={0.9}
                   />
 
                   {/* Outer white ring */}
                   <circle
-                    cx={x}
-                    cy={y}
-                    r={scaledRadius * 1.2}
-                    fill="none"
-                    stroke="white"
-                    strokeWidth={2 / zoom}
+                    cx={x} cy={y} r={scaledRadius * 1.2}
+                    fill="none" stroke="white" strokeWidth={2 / zoom}
                     opacity={isSelected || isHovered ? 1 : 0.8}
                   />
 
                   {/* Main point - clickable */}
                   <circle
-                    cx={x}
-                    cy={y}
-                    r={scaledRadius}
+                    cx={x} cy={y} r={scaledRadius}
                     fill="#DC2626"
                     stroke={isSelected ? "#FFD700" : "white"}
                     strokeWidth={isSelected ? 3 / zoom : 2 / zoom}
@@ -560,22 +639,16 @@ export function PhotoPointsOverlay({
 
                   {/* Depth indicator (inner circle) */}
                   <circle
-                    cx={x}
-                    cy={y}
-                    r={scaledRadius * 0.5}
+                    cx={x} cy={y} r={scaledRadius * 0.5}
                     fill={point.depth === "deep" ? "#7C3AED" : "#10B981"}
                     style={{ pointerEvents: "none" }}
                   />
 
-                  {/* Dosage label - positioned above the point */}
+                  {/* Dosage label */}
                   <text
-                    x={x}
-                    y={y - scaledRadius * 1.8}
-                    textAnchor="middle"
-                    dominantBaseline="middle"
-                    fill="white"
-                    fontSize={12 / zoom}
-                    fontWeight="bold"
+                    x={x} y={y - scaledRadius * 1.8}
+                    textAnchor="middle" dominantBaseline="middle"
+                    fill="white" fontSize={12 / zoom} fontWeight="bold"
                     style={{
                       textShadow: "0 1px 3px rgba(0,0,0,0.9), 0 0 6px rgba(0,0,0,0.5)",
                       pointerEvents: "none",
@@ -657,7 +730,6 @@ export function PhotoPointsOverlay({
             <span className="text-xs text-slate-600">Profundo</span>
           </div>
           
-          {/* Zone Colors Legend (only when zones visible) */}
           {showZoneBoundaries && (
             <>
               <div className="border-t border-slate-200 pt-2 mt-2">
@@ -684,6 +756,23 @@ export function PhotoPointsOverlay({
           )}
         </div>
       </div>
+    </>
+  );
+
+  return (
+    <div ref={wrapperRef} className="relative w-full h-full">
+      {/* Fullscreen Portal */}
+      {isFullscreen ? (
+        <div className="fixed inset-0 z-50 bg-slate-900">
+          <div className="relative w-full h-full">
+            {overlayContent}
+          </div>
+        </div>
+      ) : (
+        <div className="relative w-full h-full bg-slate-900 rounded-lg overflow-hidden">
+          {overlayContent}
+        </div>
+      )}
     </div>
   );
 }

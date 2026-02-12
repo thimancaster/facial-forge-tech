@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useCallback, useEffect } from "react";
-import { NormalizedRect, detectFaceBox } from "@/hooks/useFaceLandmarksOnImage";
+import { NormalizedRect, FaceAnchors, FaceDetectionData, detectFaceData } from "@/hooks/useFaceLandmarksOnImage";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -213,13 +213,22 @@ export function NewAnalysisWizard({ initialPatientId }: NewAnalysisWizardProps) 
     nasal: null, perioral: null, profile_left: null, profile_right: null,
   });
 
-  // Persisted face bounding boxes per photo type (detected once, reused deterministically)
-  const [faceBoxes, setFaceBoxes] = useState<Record<PhotoType, NormalizedRect | null>>({
+  // Persisted face detection data per photo type (detected once, reused deterministically)
+  const [faceDetections, setFaceDetections] = useState<Record<PhotoType, FaceDetectionData | null>>({
     resting: null, glabellar: null, frontal: null, smile: null,
     nasal: null, perioral: null, profile_left: null, profile_right: null,
   });
 
-  // Detect faceBox for a given photo blob URL using shared singleton
+  // Legacy compat: extract faceBoxes from detections
+  const faceBoxes = useMemo(() => {
+    const boxes: Record<PhotoType, NormalizedRect | null> = {} as any;
+    for (const key of Object.keys(faceDetections) as PhotoType[]) {
+      boxes[key] = faceDetections[key]?.faceBox ?? null;
+    }
+    return boxes;
+  }, [faceDetections]);
+
+  // Detect faceBox + anchors for a given photo blob URL using shared singleton
   const detectAndStoreFaceBox = useCallback(async (type: PhotoType, blobUrl: string) => {
     try {
       const img = document.createElement("img");
@@ -230,8 +239,8 @@ export function NewAnalysisWizard({ initialPatientId }: NewAnalysisWizardProps) 
         img.src = blobUrl;
       });
 
-      const box = await detectFaceBox(img);
-      if (box) setFaceBoxes(prev => ({ ...prev, [type]: box }));
+      const data = await detectFaceData(img);
+      if (data) setFaceDetections(prev => ({ ...prev, [type]: data }));
     } catch {
       if (import.meta.env.DEV) console.warn(`[DEV] faceBox detection failed for ${type}`);
     }
@@ -260,7 +269,7 @@ export function NewAnalysisWizard({ initialPatientId }: NewAnalysisWizardProps) 
     }
     setPhotos(prev => ({ ...prev, [type]: null }));
     setPhotoUrls(prev => ({ ...prev, [type]: null }));
-    setFaceBoxes(prev => ({ ...prev, [type]: null }));
+    setFaceDetections(prev => ({ ...prev, [type]: null }));
   };
 
   const uploadPhotoToStorage = async (file: File, userId: string, patientId: string, photoType: PhotoType): Promise<string | null> => {
@@ -690,7 +699,7 @@ export function NewAnalysisWizard({ initialPatientId }: NewAnalysisWizardProps) 
           muscle_strength_score: muscleStrength,
           skin_type_glogau: skinTypeGlogau,
           safety_zones: aiAnalysis?.safetyZones as any || null,
-          face_boxes: faceBoxes as any,
+          face_boxes: faceDetections as any,
           status: 'completed',
         });
 
@@ -712,7 +721,7 @@ export function NewAnalysisWizard({ initialPatientId }: NewAnalysisWizardProps) 
         resting: null, glabellar: null, frontal: null, smile: null,
         nasal: null, perioral: null, profile_left: null, profile_right: null,
       });
-      setFaceBoxes({
+      setFaceDetections({
         resting: null, glabellar: null, frontal: null, smile: null,
         nasal: null, perioral: null, profile_left: null, profile_right: null,
       });
@@ -1222,6 +1231,7 @@ export function NewAnalysisWizard({ initialPatientId }: NewAnalysisWizardProps) 
                       onPointClick={setSelectedPoint}
                       selectedPointId={selectedPoint?.id}
                       persistedFaceBox={faceBoxes.resting}
+                      persistedAnchors={faceDetections.resting?.anchors}
                     />
                   ) : (
                     <div className="h-full flex items-center justify-center bg-muted/30 rounded-lg border-2 border-dashed border-border">

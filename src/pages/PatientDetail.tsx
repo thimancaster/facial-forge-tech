@@ -18,7 +18,7 @@ import { TreatmentTimeline } from "@/components/TreatmentTimeline";
 import { SecureImage } from "@/components/SecureImage";
 import { PhotoPointsOverlay } from "@/components/PhotoPointsOverlay";
 import { InjectionPoint } from "@/components/Face3DViewer";
-import { NormalizedRect } from "@/hooks/useFaceLandmarksOnImage";
+import { NormalizedRect, FaceAnchors } from "@/hooks/useFaceLandmarksOnImage";
 import { Json } from "@/integrations/supabase/types";
 import {
   Dialog,
@@ -187,9 +187,23 @@ export default function PatientDetail() {
   const getPersistedFaceBox = (analysis: Analysis, photoKey: PhotoKey): NormalizedRect | null => {
     if (!analysis.face_boxes || typeof analysis.face_boxes !== 'object') return null;
     const boxes = analysis.face_boxes as Record<string, any>;
-    const box = boxes[photoKey];
-    if (box && typeof box.x === 'number' && typeof box.y === 'number') {
-      return box as NormalizedRect;
+    const entry = boxes[photoKey];
+    // Support new format { faceBox: {...}, anchors: {...} } and legacy format { x, y, width, height }
+    if (entry?.faceBox && typeof entry.faceBox.x === 'number') {
+      return entry.faceBox as NormalizedRect;
+    }
+    if (entry && typeof entry.x === 'number' && typeof entry.y === 'number') {
+      return entry as NormalizedRect;
+    }
+    return null;
+  };
+
+  const getPersistedAnchors = (analysis: Analysis, photoKey: PhotoKey): FaceAnchors | null => {
+    if (!analysis.face_boxes || typeof analysis.face_boxes !== 'object') return null;
+    const boxes = analysis.face_boxes as Record<string, any>;
+    const entry = boxes[photoKey];
+    if (entry?.anchors && typeof entry.anchors.noseTip === 'object') {
+      return entry.anchors as FaceAnchors;
     }
     return null;
   };
@@ -674,6 +688,7 @@ export default function PatientDetail() {
                       photoUrl={selectedPhoto}
                       injectionPoints={injPoints}
                       persistedFaceBox={faceBox}
+                      persistedAnchors={selectedPhotoAnalysis && selectedPhotoKey ? getPersistedAnchors(selectedPhotoAnalysis, selectedPhotoKey) : undefined}
                       showZoneBoundaries
                     />
                   </div>
